@@ -4,9 +4,10 @@
 
 int main(int argc, char** argv)
 {
-	uberlog::Log log;
+	uberlog::Logger log;
 	log.Open("c:\\temp\\test.log");
 	printf("log opened\n");
+	log.LogRaw("hello", 5);
 	Sleep(1000);
 
 	return 0;
