@@ -7,14 +7,12 @@ into the log file.
 #include <windows.h>
 #include <io.h>
 #include <fcntl.h>
-static const char PLATFORM_SLASH = '\\';
 #endif
 
 #ifdef __linux__
 #include <sys/types.h>
 #include <unistd.h>
 #include <glob.h>
-static const char PLATFORM_SLASH = '/';
 #endif
 
 #include <string>
@@ -25,70 +23,28 @@ static const char PLATFORM_SLASH = '/';
 #include <stdint.h>
 #include "uberlog.h"
 
-struct Globals
-{
-	bool        IsParentDead = false;
-	uint32_t    ParentPID    = 0;
-	uint32_t    RingSize     = 0;
-	std::thread WatcherThread;
-	std::string Filename;
-	int64_t     MaxLogSize     = 30 * 1024 * 1024;
-	int32_t     MaxNumArchives = 3;
-};
-
-std::thread WatchForParentProcessDeath(Globals* glob)
-{
-#ifdef _WIN32
-	// Assume that if we can't open the process, then it is already dead
-	HANDLE hproc = OpenProcess(SYNCHRONIZE, false, (DWORD) glob->ParentPID);
-	if (hproc == NULL)
-	{
-		glob->IsParentDead = true;
-		return std::thread();
-	}
-
-	return std::thread([glob, hproc]() {
-		WaitForSingleObject(hproc, INFINITE);
-		glob->IsParentDead = true;
-	});
-#else
-	return std::thread();
-#endif
-}
-
-void PollForParentProcessDeath(Globals* glob)
-{
-#ifdef __linux__
-	// On linux, if our parent process dies, then our parent process becomes a process with PID equal to 0 or 1.
-	// via http://stackoverflow.com/a/2035683/90614
-	auto ppid = getppid();
-	if (ppid == 0 || ppid == 1)
-	{
-		glob->IsParentDead = true;
-	}
-#endif
-}
-
-void SleepMS(int ms)
-{
-#ifdef _WIN32
-	Sleep(ms);
-#else
-	int64_t  nanoseconds = ms * 1000000;
-	timespec t;
-	t.tv_nsec = nanoseconds % 1000000000;
-	t.tv_sec  = (nanoseconds - t.tv_nsec) / 1000000000;
-	nanosleep(&t, nullptr);
-#endif
-}
+namespace uberlog {
+namespace internal {
 
 // Manage the log file, and the log rotation.
 // Assume we are the only process writing to this log file.
 class LogFile
 {
 public:
-	LogFile(std::string filename, int64_t maxFileSize, int32_t maxNumArchiveFiles) : Filename(filename), MaxFileSize(maxFileSize), MaxNumArchiveFiles(maxNumArchiveFiles)
+	LogFile()
 	{
+	}
+
+	~LogFile()
+	{
+		Close();
+	}
+
+	void Init(std::string filename, int64_t maxFileSize, int32_t maxNumArchiveFiles)
+	{
+		Filename           = filename;
+		MaxFileSize        = maxFileSize;
+		MaxNumArchiveFiles = maxNumArchiveFiles;
 	}
 
 	bool Write(const void* buf, size_t len)
@@ -197,7 +153,7 @@ private:
 
 	std::string LogDir() const
 	{
-		auto lastSlash = Filename.rfind(PLATFORM_SLASH);
+		auto lastSlash = Filename.rfind(PATH_SLASH);
 		if (lastSlash == -1)
 			return "";
 		return Filename.substr(0, lastSlash + 1);
@@ -254,6 +210,185 @@ private:
 	}
 };
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// This implements the logic of the logger slave process
+class LoggerSlave
+{
+public:
+	bool        IsParentDead = false;
+	uint32_t    ParentPID    = 0;
+	uint32_t    RingSize     = 0;
+	std::thread WatcherThread;
+	std::string Filename;
+	int64_t     MaxLogSize     = 30 * 1024 * 1024;
+	int32_t     MaxNumArchives = 3;
+	LogFile     Log;
+
+#ifdef _WIN32
+	HANDLE CloseMessageEvent = NULL;
+#else
+	bool CloseMessageFlag = false;
+#endif
+
+	void Run()
+	{
+		printf("uberlog writer [%s, %d MB max size, %d archives] is starting\n", Filename.c_str(), (int) (MaxLogSize / 1024 / 1024), (int) MaxNumArchives);
+
+#ifdef _WIN32
+		CloseMessageEvent = CreateEvent(NULL, true, false, NULL);
+#endif
+
+		std::thread watcherThread = WatchForParentProcessDeath(); // Windows-only
+
+		Log.Init(Filename, MaxLogSize, MaxNumArchives);
+
+		// Try to open file immediately, for consistency & predictability sake
+		Log.Open();
+
+		RingBuffer ring;
+
+		while (!IsParentDead && !HasReceivedCloseMessage())
+		{
+			if (!ring.Buf)
+				OpenRingBuffer(ring, RingSize);
+			if (ring.Buf)
+				ReadMessages(ring);
+
+			PollForParentProcessDeath(); // Not used on Windows
+			internal::SleepMS(1000);
+		}
+
+		Log.Close();
+
+		if (HasReceivedCloseMessage())
+			printf("uberlog is stopping: received Close instruction\n");
+
+		if (IsParentDead)
+			printf("uberlog is stopping: parent is dead\n");
+
+		SleepMS(1000); // DEBUG
+
+		if (watcherThread.joinable())
+			watcherThread.join();
+
+#ifdef _WIN32
+		CloseHandle(CloseMessageEvent);
+		CloseMessageEvent = NULL;
+#endif
+	}
+
+private:
+	std::thread WatchForParentProcessDeath()
+	{
+#ifdef _WIN32
+		// Assume that if we can't open the process, then it is already dead
+		HANDLE hproc = OpenProcess(SYNCHRONIZE, false, (DWORD) ParentPID);
+		if (hproc == NULL)
+		{
+			IsParentDead = true;
+			return std::thread();
+		}
+
+		return std::thread([this, hproc]() {
+			HANDLE h[]   = {hproc, CloseMessageEvent};
+			DWORD  fired = WaitForMultipleObjects(2, h, false, INFINITE) - WAIT_OBJECT_0;
+			if (fired == 0)
+				this->IsParentDead = true;
+			CloseHandle(hproc);
+		});
+#else
+		// The linux implementation polls, via PollForParentProcessDeath
+		return std::thread();
+#endif
+	}
+
+	void PollForParentProcessDeath()
+	{
+#ifdef __linux__
+		// On linux, if our parent process dies, then our parent process becomes a process with PID equal to 0 or 1.
+		// via http://stackoverflow.com/a/2035683/90614
+		auto ppid = getppid();
+		if (ppid == 0 || ppid == 1)
+		{
+			IsParentDead = true;
+		}
+#endif
+		// On Windows, we don't need to implement this path, because we can wait on process death
+	}
+
+	bool OpenRingBuffer(RingBuffer& ring, size_t size)
+	{
+		void* buf = SetupSharedMemory(ParentPID, Filename.c_str(), SharedMemSizeFromRingSize(size), false);
+		if (!buf)
+			return false;
+		ring.Init(buf, size, false);
+		return true;
+	}
+
+	void CloseRingBuffer(RingBuffer& ring)
+	{
+		if (ring.Buf)
+			CloseSharedMemory(ring.Buf, SharedMemSizeFromRingSize(ring.Size));
+		ring.Buf  = nullptr;
+		ring.Size = 0;
+	}
+
+	void ReadMessages(RingBuffer& ring)
+	{
+		MessageHead head;
+		size_t      avail = ring.AvailableForRead();
+		if (avail < sizeof(head))
+			return;
+
+		if (ring.Read(&head, sizeof(head)) != sizeof(head))
+			Panic("ring.Read(head) failed");
+
+		switch (head.Cmd)
+		{
+		case Command::Close:
+			SetReceivedCloseMessage();
+			break;
+		case Command::LogMsg:
+		{
+			void*  ptr1  = nullptr;
+			void*  ptr2  = nullptr;
+			size_t size1 = 0;
+			size_t size2 = 0;
+			ring.ReadNoCopy(head.PayloadLen, ptr1, size1, ptr2, size2);
+			bool ok = Log.Write(ptr1, size1);
+			if (ok && size2 != 0)
+				ok = Log.Write(ptr2, size2);
+			if (!ok)
+				OutOfBandWarning("Failed to write to log file");
+			break;
+		}
+		default:
+			Panic("Unexpected command");
+		}
+	}
+
+	void SetReceivedCloseMessage()
+	{
+#ifdef _WIN32
+		SetEvent(CloseMessageEvent);
+#else
+		CloseMessageFlag = true;
+#endif
+	}
+
+	bool HasReceivedCloseMessage()
+	{
+#ifdef _WIN32
+		return WaitForSingleObject(CloseMessageEvent, 0) == WAIT_OBJECT_0;
+#else
+		return CloseMessageFlag;
+#endif
+	}
+};
+
 void ShowHelp()
 {
 	auto help = R"(uberlogger is a child process that is spawned by an application that performs logging.
@@ -261,45 +396,27 @@ Normally, you do not launch uberlogger manually. It is launched automatically by
 uberlogger <parentpid> <ringsize> <logfilename> <maxlogsize> <maxarchives>)";
 	printf("%s\n", help);
 }
-
-void Run(Globals& glob)
-{
-	LogFile log(glob.Filename, glob.MaxLogSize, glob.MaxNumArchives);
-
-	// Try to open file immediately, for consistency & predictability sake
-	log.Open();
-
-	while (!glob.IsParentDead)
-	{
-		PollForParentProcessDeath(&glob);
-		SleepMS(1000);
-	}
-	printf("uberlog is stopping: Parent is dead\n");
-	SleepMS(200); // DEBUG
 }
+} // namespace uberlog::internal
 
 int main(int argc, char** argv)
 {
-	Globals glob;
-	bool    showHelp = true;
+	bool showHelp = true;
 
 	if (argc == 6)
 	{
-		showHelp            = false;
-		glob.ParentPID      = (uint32_t) strtoul(argv[1], nullptr, 10);
-		glob.RingSize       = (uint32_t) strtoul(argv[2], nullptr, 10);
-		glob.Filename       = argv[3];
-		glob.MaxLogSize     = (int64_t) strtoull(argv[4], nullptr, 10);
-		glob.MaxNumArchives = (int32_t) strtol(argv[5], nullptr, 10);
-		glob.WatcherThread  = WatchForParentProcessDeath(&glob);
-		printf("uberlog writer [%s, %d MB max size, %d archives] is starting\n", glob.Filename.c_str(), (int) (glob.MaxLogSize / 1024 / 1024), (int) glob.MaxNumArchives);
-		Run(glob);
-		if (glob.WatcherThread.joinable())
-			glob.WatcherThread.join();
+		showHelp = false;
+		uberlog::internal::LoggerSlave slave;
+		slave.ParentPID      = (uint32_t) strtoul(argv[1], nullptr, 10);
+		slave.RingSize       = (uint32_t) strtoul(argv[2], nullptr, 10);
+		slave.Filename       = argv[3];
+		slave.MaxLogSize     = (int64_t) strtoull(argv[4], nullptr, 10);
+		slave.MaxNumArchives = (int32_t) strtol(argv[5], nullptr, 10);
+		slave.Run();
 	}
 	if (showHelp)
 	{
-		ShowHelp();
+		uberlog::internal::ShowHelp();
 		return 1;
 	}
 

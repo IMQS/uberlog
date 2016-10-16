@@ -1,3 +1,7 @@
 .vs
-msvc/Debug
-msvc/uberlog.VC.db
+x64/
+Debug/
+Release/
+*.VC.db
+*.user
+*.opendb
