@@ -221,6 +221,8 @@ public:
 	bool        IsParentDead = false;
 	uint32_t    ParentPID    = 0;
 	uint32_t    RingSize     = 0;
+	RingBuffer Ring;
+	shm_handle_t ShmHandle = internal::NullShmHandle;
 	std::thread WatcherThread;
 	std::string Filename;
 	int64_t     MaxLogSize     = 30 * 1024 * 1024;
@@ -248,18 +250,20 @@ public:
 		// Try to open file immediately, for consistency & predictability sake
 		Log.Open();
 
-		RingBuffer ring;
-
 		while (!IsParentDead && !HasReceivedCloseMessage())
 		{
-			if (!ring.Buf)
-				OpenRingBuffer(ring, RingSize);
-			if (ring.Buf)
-				ReadMessages(ring);
+			if (!Ring.Buf)
+				OpenRingBuffer();
+			if (Ring.Buf)
+				ReadMessages();
 
 			PollForParentProcessDeath(); // Not used on Windows
 			internal::SleepMS(1000);
 		}
+
+		// Drain the buffer
+		if (IsParentDead && Ring.Buf)
+			ReadMessages();
 
 		Log.Close();
 
@@ -269,7 +273,7 @@ public:
 		if (IsParentDead)
 			printf("uberlog is stopping: parent is dead\n");
 
-		SleepMS(1000); // DEBUG
+		SleepMS(500); // DEBUG
 
 		if (watcherThread.joinable())
 			watcherThread.join();
@@ -319,31 +323,34 @@ private:
 		// On Windows, we don't need to implement this path, because we can wait on process death
 	}
 
-	bool OpenRingBuffer(RingBuffer& ring, size_t size)
+	bool OpenRingBuffer()
 	{
-		void* buf = SetupSharedMemory(ParentPID, Filename.c_str(), SharedMemSizeFromRingSize(size), false);
-		if (!buf)
+		shm_handle_t shm = NullShmHandle;
+		void* buf = nullptr;
+		if (!SetupSharedMemory(ParentPID, Filename.c_str(), SharedMemSizeFromRingSize(RingSize), false, shm, buf))
 			return false;
-		ring.Init(buf, size, false);
+		ShmHandle = shm;
+		Ring.Init(buf, RingSize, false);
 		return true;
 	}
 
-	void CloseRingBuffer(RingBuffer& ring)
+	void CloseRingBuffer()
 	{
-		if (ring.Buf)
-			CloseSharedMemory(ring.Buf, SharedMemSizeFromRingSize(ring.Size));
-		ring.Buf  = nullptr;
-		ring.Size = 0;
+		if (Ring.Buf)
+			CloseSharedMemory(ShmHandle, Ring.Buf, SharedMemSizeFromRingSize(Ring.Size));
+		Ring.Buf  = nullptr;
+		Ring.Size = 0;
+		ShmHandle = NullShmHandle;
 	}
 
-	void ReadMessages(RingBuffer& ring)
+	void ReadMessages()
 	{
 		MessageHead head;
-		size_t      avail = ring.AvailableForRead();
+		size_t      avail = Ring.AvailableForRead();
 		if (avail < sizeof(head))
 			return;
 
-		if (ring.Read(&head, sizeof(head)) != sizeof(head))
+		if (Ring.Read(&head, sizeof(head)) != sizeof(head))
 			Panic("ring.Read(head) failed");
 
 		switch (head.Cmd)
@@ -357,7 +364,7 @@ private:
 			void*  ptr2  = nullptr;
 			size_t size1 = 0;
 			size_t size2 = 0;
-			ring.ReadNoCopy(head.PayloadLen, ptr1, size1, ptr2, size2);
+			Ring.ReadNoCopy(head.PayloadLen, ptr1, size1, ptr2, size2);
 			bool ok = Log.Write(ptr1, size1);
 			if (ok && size2 != 0)
 				ok = Log.Write(ptr2, size2);

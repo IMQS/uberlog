@@ -68,32 +68,34 @@ void SleepMS(uint32_t ms)
 {
 	Sleep((DWORD) ms);
 }
-void* SetupSharedMemory(proc_id_t parentID, const char* logFileName, size_t size, bool create)
+bool SetupSharedMemory(proc_id_t parentID, const char* logFileName, size_t size, bool create, shm_handle_t& shmHandle, void*& shmBuf)
 {
 	char shmName[100];
 	SharedMemObjectName(parentID, logFileName, shmName);
-	HANDLE mapping = NULL;
 	if (create)
-		mapping = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, (DWORD)(size >> 32), (DWORD) size, shmName);
+		shmHandle = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, (DWORD)(size >> 32), (DWORD) size, shmName);
 	else
-		mapping = OpenFileMappingA(FILE_MAP_ALL_ACCESS, false, shmName);
+		shmHandle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, false, shmName);
 
-	if (mapping == NULL)
+	if (shmHandle == NULL)
 	{
-		OutOfBandWarning("uberlog: CreateFileMapping failed: %u\n", GetLastError());
-		return nullptr;
+		OutOfBandWarning("uberlog: %s failed: %u\n", create ? "CreateFileMapping" : "OpenFileMapping", GetLastError());
+		return false;
 	}
-	void* buf = MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, size);
-	//CloseHandle(mapping);
-	if (!buf)
+	shmBuf = MapViewOfFile(shmHandle, FILE_MAP_ALL_ACCESS, 0, 0, size);
+	if (!shmBuf)
 	{
 		OutOfBandWarning("uberlog: MapViewOfFile failed: %u\n", GetLastError());
+		CloseHandle(shmHandle);
+		shmHandle = NULL;
+		return false;
 	}
-	return buf;
+	return true;
 }
-void CloseSharedMemory(void* buf, size_t size)
+void CloseSharedMemory(shm_handle_t shmHandle, void* buf, size_t size)
 {
 	UnmapViewOfFile(buf);
+	CloseHandle(shmHandle);
 }
 #else
 const char PATH_SLASH = '/';
@@ -111,7 +113,7 @@ bool WaitForProcessToDie(proc_handle_t handle, proc_id_t pid, uint32_t milliseco
 		if (r == pid)
 			return true;
 		usleep(1000);
-		std::chrono::milliseconds elapsed_ms = std::chrono::system_clock::now() - start;
+		auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start);
 		if (elapsed_ms.count() > milliseconds)
 			return false;
 	}
@@ -142,40 +144,44 @@ void SleepMS(uint32_t ms)
 	t.tv_sec  = (nanoseconds - t.tv_nsec) / 1000000000;
 	nanosleep(&t, nullptr);
 }
-void* SetupSharedMemory(proc_id_t parentID, const char* logFilename, size_t size, bool create)
+bool SetupSharedMemory(proc_id_t parentID, const char* logFileName, size_t size, bool create, shm_handle_t& shmHandle, void*& shmBuf)
 {
 	char shmName[100];
 	SharedMemObjectName(parentID, logFilename, shmName);
-	int mapping = shm_open(shmName, create ? O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
-	if (mapping == -1)
+	shmHandle = shm_open(shmName, create ? O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
+	if (shmHandle == -1)
 	{
 		OutOfBandWarning("uberlog: shm_open failed: %d\n", errno);
-		return nullptr;
+		return false;
 	}
-	void* buf = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, mapping, 0);
-	close(mapping);
-	if (!buf)
+	shmBuf = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, shmHandle, 0);
+	if (!shmBuf)
 	{
 		OutOfBandWarning("uberlog: mmap failed: %d\n", errno);
+		close(shmHandle);
+		shmHandle = -1;
+		return false;
 	}
-	return buf;
+	return true;
 }
-void CloseSharedMemory(void* buf, size_t size)
+void CloseSharedMemory(shm_handle_t shmHandle, void* buf, size_t size)
 {
 	munmap(buf, size);
+	close(shmHandle);
 }
 #endif
 
 void SharedMemObjectName(proc_id_t parentID, const char* logFilename, char shmName[100])
 {
-	char key1[16] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15};
-	char key2[16] = {15,14,13,12,11,10,9,8,7,6,5,4,3,2,1};
+	char key1[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+	char key2[16] = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1};
+	memcpy(key1, &parentID, sizeof(parentID));
 	uint64_t h1 = siphash24(logFilename, strlen(logFilename), key1);
 	uint64_t h2 = siphash24(logFilename, strlen(logFilename), key2);
 #ifdef _WIN32
-	sprintf(shmName, "uberlog-shm-%u-%08x%08x%08x%08x", parentID, (uint32_t) (h1 >> 32), (uint32_t) h1, (uint32_t) (h2 >> 32), (uint32_t) h2);
+	sprintf(shmName, "uberlog-shm-%u-%08x%08x%08x%08x", parentID, (uint32_t)(h1 >> 32), (uint32_t) h1, (uint32_t)(h2 >> 32), (uint32_t) h2);
 #else
-	sprintf(shmName, "/uberlog-shm-%u-%08x%08x%08x%08x", parentID, (uint32_t) (h1 >> 32), (uint32_t) h1, (uint32_t) (h2 >> 32), (uint32_t) h2);
+	sprintf(shmName, "/uberlog-shm-%u-%08x%08x%08x%08x", parentID, (uint32_t)(h1 >> 32), (uint32_t) h1, (uint32_t)(h2 >> 32), (uint32_t) h2);
 #endif
 }
 
@@ -198,15 +204,15 @@ void OutOfBandWarning(_In_z_ _Printf_format_string_ const char* msg, ...)
 	vfprintf(stdout, msg, va);
 	va_end(va);
 
-	va_start(va, msg);
-	vfprintf(stderr, msg, va);
-	va_end(va);
+	//va_start(va, msg);
+	//vfprintf(stderr, msg, va);
+	//va_end(va);
 }
 
 void Panic(const char* msg)
 {
 	fprintf(stdout, "uberlog panic: %s\n", msg);
-	fprintf(stderr, "uberlog panic: %s\n", msg);
+	//fprintf(stderr, "uberlog panic: %s\n", msg);
 	*((int*) 0) = 1;
 }
 
@@ -492,7 +498,25 @@ void Logger::LogRaw(const void* data, size_t len)
 		OutOfBandWarning("Logger.LogRaw called but log is not open\n");
 		return;
 	}
+	NumLogMessagesSent++;
 	SendMessage(Command::LogMsg, data, len);
+	if (NumLogMessagesSent == 1)
+	{
+		// At process startup, it is likely that we are sending messages, and our
+		// child writer process has not yet opened a handle to the shared memory.
+		// If we die during that initial period, then the log messages will
+		// never be delivered, because by the time the child tries to open the
+		// shared memory, we will already have died and the last reference to the
+		// shared memory will have been lost. One could arguably shift this
+		// check to the moment after we create our child process, but we choose
+		// to do it here instead, so that there is increased chance that we can
+		// get useful work done while we wait for our child process to start up.
+		// This is the last moment in time where we can perform this check, and
+		// still live up to our claim that we won't lose a single log message,
+		// even if the main process faults immediately after sending that message.
+		if (!WaitForRingToBeEmpty(TimeoutChildProcessInitMS))
+			OutOfBandWarning("Timed out waiting for uberlog slave to consume log messages");
+	}
 }
 
 bool Logger::Open()
@@ -518,6 +542,7 @@ bool Logger::Open()
 	}
 
 	IsOpen = true;
+	NumLogMessagesSent = 0;
 	return true;
 }
 
@@ -542,9 +567,11 @@ void Logger::SendMessage(internal::Command cmd, const void* payload, size_t payl
 
 bool Logger::CreateRingBuffer()
 {
-	void* buf = SetupSharedMemory(GetMyPID(), Filename.c_str(), SharedMemSizeFromRingSize(RingBufferSize), true);
-	if (!buf)
+	shm_handle_t shm = internal::NullShmHandle;
+	void*        buf = nullptr;
+	if (!SetupSharedMemory(GetMyPID(), Filename.c_str(), SharedMemSizeFromRingSize(RingBufferSize), true, shm, buf))
 		return false;
+	ShmHandle = shm;
 	Ring.Init(buf, RingBufferSize, true);
 	return true;
 }
@@ -552,9 +579,25 @@ bool Logger::CreateRingBuffer()
 void Logger::CloseRingBuffer()
 {
 	if (Ring.Buf)
-		CloseSharedMemory(Ring.Buf, SharedMemSizeFromRingSize(Ring.Size));
+		CloseSharedMemory(ShmHandle, Ring.Buf, SharedMemSizeFromRingSize(Ring.Size));
 	Ring.Buf  = nullptr;
 	Ring.Size = 0;
+	ShmHandle = internal::NullShmHandle;
+}
+
+bool Logger::WaitForRingToBeEmpty(uint32_t milliseconds)
+{
+	auto start = std::chrono::system_clock::now();
+	while (Ring.AvailableForRead() != 0)
+	{
+		internal::SleepMS(1);
+		auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start);
+		if (elapsed_ms.count() >= milliseconds)
+			return false;
+	}
+	auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start);
+	printf("took %d for initial drain\n", (int) elapsed_ms.count());
+	return true;
 }
 
 } // namespace uberlog

@@ -2,19 +2,24 @@
 
 #include <atomic>
 #include <string>
+#include "tsf.h"
 
 namespace uberlog {
 
 namespace internal {
 
 #ifdef _WIN32
-const char     PATH_SLASH = '\\';
-typedef HANDLE proc_handle_t;
-typedef DWORD  proc_id_t;
+const char         PATH_SLASH = '\\';
+typedef HANDLE     proc_handle_t;
+typedef HANDLE     shm_handle_t;
+typedef DWORD      proc_id_t;
+const shm_handle_t NullShmHandle = NULL;
 #else
-const char    PATH_SLASH = '/';
-typedef void* TProcessHandle;
-typedef pid_t TProcessID;
+const char         PATH_SLASH = '/';
+typedef void*      TProcessHandle;
+typedef int        shm_handle_t;
+typedef pid_t      TProcessID;
+const shm_handle_t NullShmHandle = -1;
 #endif
 
 bool        ProcessCreate(const char* cmd, const char* args, proc_handle_t& handle, proc_id_t& pid);
@@ -23,8 +28,8 @@ proc_id_t   GetMyPID();
 std::string GetMyExePath();
 void        SleepMS(uint32_t ms);
 void        SharedMemObjectName(proc_id_t parentID, const char* logFilename, char shmName[100]);
-void*       SetupSharedMemory(proc_id_t parentID, const char* logFileName, size_t size, bool create);
-void        CloseSharedMemory(void* buf, size_t size);
+bool        SetupSharedMemory(proc_id_t parentID, const char* logFileName, size_t size, bool create, shm_handle_t& shmHandle, void*& shmBuf);
+void        CloseSharedMemory(shm_handle_t shmHandle, void* buf, size_t size);
 size_t      SharedMemSizeFromRingSize(size_t ringBufferSize);
 void        OutOfBandWarning(_In_z_ _Printf_format_string_ const char* msg, ...);
 void        Panic(const char* msg);
@@ -103,18 +108,39 @@ public:
 	// Low level "write bytes to log file"
 	void LogRaw(const void* data, size_t len);
 
+	// Write printf compatible, but type safe, formatted output to log file. See tsf.h for details
+	template<typename... Args>
+	void LogFmt(const char* format_str, const Args&... args)
+	{
+		const size_t bufsize = 160;
+		char staticbuf[bufsize];
+		tsf::CharLenPair res = tsf::fmt_static_buf(staticbuf, bufsize, format_str, args...);
+		LogRaw(res.Str, res.Len);
+		if (res.Str != staticbuf)
+			delete[] res.Str;
+	}
+
+	void LogFmt(const char* format_str)
+	{
+		LogRaw(format_str, strlen(format_str));
+	}
+
 private:
 	std::string             Filename;
-	size_t                  RingBufferSize = 1024 * 1024;
-	int64_t                 MaxFileSize    = 30 * 1048576;
-	int32_t                 MaxNumArchives = 3;
-	bool                    IsOpen         = false;
+	size_t                  RingBufferSize            = 1024 * 1024;
+	int64_t                 MaxFileSize               = 30 * 1048576;
+	int32_t                 MaxNumArchives            = 3;
+	int64_t                 NumLogMessagesSent        = 0;
+	uint32_t                TimeoutChildProcessInitMS = 10000; // Time we wait for our child process to come alive
+	bool                    IsOpen                    = false;
 	internal::RingBuffer    Ring;
 	internal::proc_handle_t HChildProcess = nullptr; // not used on linux
 	internal::proc_id_t     ChildPID      = -1;
+	internal::shm_handle_t  ShmHandle     = internal::NullShmHandle;
 	bool                    Open();
 	void                    SendMessage(internal::Command cmd, const void* payload, size_t payload_len);
 	bool                    CreateRingBuffer();
 	void                    CloseRingBuffer();
+	bool                    WaitForRingToBeEmpty(uint32_t milliseconds); // Returns true if the ring is empty
 };
 }
