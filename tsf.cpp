@@ -3,7 +3,7 @@
 
 namespace tsf {
 
-static const size_t argbuf_arraysize = 64;
+static const size_t argbuf_arraysize = 16;
 
 class StackBuffer
 {
@@ -56,7 +56,7 @@ public:
 
 static inline void fmt_settype(char argbuf[argbuf_arraysize], size_t pos, const char* width, char type)
 {
-	if (width != NULL)
+	if (width != nullptr)
 	{
 		// set the type and the width specifier
 		switch (argbuf[pos - 1])
@@ -84,7 +84,7 @@ static inline void fmt_settype(char argbuf[argbuf_arraysize], size_t pos, const 
 
 static inline int fmt_output_with_snprintf(char* outbuf, char fmt_type, char argbuf[argbuf_arraysize], size_t argbufsize, size_t outputSize, const fmtarg* arg)
 {
-#define				SETTYPE1(type)			fmt_settype( argbuf, argbufsize, NULL, type )
+#define				SETTYPE1(type)			fmt_settype( argbuf, argbufsize, nullptr, type )
 #define				SETTYPE2(width, type)	fmt_settype( argbuf, argbufsize, width, type )
 
 #ifdef _WIN32
@@ -162,18 +162,18 @@ static inline int fmt_output_with_snprintf(char* outbuf, char fmt_type, char arg
 	return 0;
 }
 
-std::string fmt_core(const char* fmt, ssize_t nargs, const fmtarg* args)
+TSF_FMT_API std::string fmt_core(const fmt_context& context, const char* fmt, ssize_t nargs, const fmtarg* args)
 {
 	static const size_t bufsize = 256;
 	char staticbuf[bufsize];
-	CharLenPair res = fmt_core(fmt, nargs, args, staticbuf, bufsize);
+	CharLenPair res = fmt_core(context, fmt, nargs, args, staticbuf, bufsize);
 	std::string str(res.Str, res.Len);
 	if (res.Str != staticbuf)
 		delete[] res.Str;
 	return str;
 }
 
-CharLenPair fmt_core(const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size)
+TSF_FMT_API CharLenPair fmt_core(const fmt_context& context, const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size)
 {
 	ssize_t tokenstart = -1;	// true if we have passed a %, and are looking for the end of the token
 	ssize_t iarg = 0;
@@ -185,7 +185,6 @@ CharLenPair fmt_core(const char* fmt, ssize_t nargs, const fmtarg* args, char* s
 	size_t initial_sprintf_guessed_size = staticbuf_size >> 2; // must be less than staticbuf_size
 	StackBuffer output(staticbuf, staticbuf_size);
 
-	const size_t argbuf_arraysize = 64;
 	char argbuf[argbuf_arraysize];
 
 	// we can always safely look one ahead, because 'fmt' is by definition zero terminated
@@ -195,6 +194,8 @@ CharLenPair fmt_core(const char* fmt, ssize_t nargs, const fmtarg* args, char* s
 		{
 			bool tokenint = false;
 			bool tokenreal = false;
+			bool is_q = fmt[i] == 'q';
+			bool is_Q = fmt[i] == 'Q';
 
 			switch (fmt[i])
 			{
@@ -219,9 +220,17 @@ CharLenPair fmt_core(const char* fmt, ssize_t nargs, const fmtarg* args, char* s
 			case 'p':
 			case 'n':
 			case 'v':
+			case 'q':
+			case 'Q':
 				no_args_remaining	= iarg >= nargs;								// more tokens than arguments
 				spec_too_long		= i - tokenstart >= argbuf_arraysize - 1;		// %_____too much data____v
 				disallowed			= fmt[i] == 'n';
+
+				if (is_q && context.Escape_q == nullptr)
+					disallowed = true;
+
+				if (is_Q && context.Escape_Q == nullptr)
+					disallowed = true;
 
 				if (no_args_remaining || spec_too_long || disallowed)
 				{
@@ -246,7 +255,10 @@ CharLenPair fmt_core(const char* fmt, ssize_t nargs, const fmtarg* args, char* s
 					{
 						char* outbuf = (char*) output.AddUninitialized(outputSize);
 						bool done = false;
-						ssize_t written = fmt_output_with_snprintf(outbuf, fmt[i], argbuf, argbufsize, outputSize, arg);
+						ssize_t written = 0;
+						if (is_q)		written = context.Escape_q(outbuf, outputSize, *arg);
+						else if (is_Q)	written = context.Escape_Q(outbuf, outputSize, *arg);
+						else			written = fmt_output_with_snprintf(outbuf, fmt[i], argbuf, argbufsize, outputSize, arg);
 
 						if (written >= 0 && written < outputSize)
 						{
@@ -298,22 +310,11 @@ static inline int fmt_translate_snprintf_return_value(int r, size_t count)
 		return r;
 }
 
-int fmt_snprintf(char* destination, size_t count, const char* format_str, ...)
+TSF_FMT_API int fmt_snprintf(char* destination, size_t count, const char* format_str, ...)
 {
 	va_list va;
 	va_start(va, format_str);
 	int r = vsnprintf(destination, count, format_str, va);
-	va_end(va);
-	return fmt_translate_snprintf_return_value(r, count);
-}
-
-// On Windows, wide version has different behaviour to narrow, requiring that we set Count+1 instead of Count characters.
-// On linux, both versions require Count+1 characters.
-int fmt_swprintf(wchar_t* destination, size_t count, const wchar_t* format_str, ...)
-{
-	va_list va;
-	va_start(va, format_str);
-	int r = vswprintf(destination, count, format_str, va);
 	va_end(va);
 	return fmt_translate_snprintf_return_value(r, count);
 }

@@ -13,9 +13,9 @@ int main(int argc, char** argv)
 	{
 		std::string x = "x";
 		std::string y = "yy";
-		auto test1 = tsf::fmt_write("hello %v %v %v\n", x, 1, y);
-		tsf::fmt_write("hello %v %v %v %v\n", x, 1, 2, 3);
-		tsf::fmt_write("one %v three\n", 2);
+		auto test1 = tsf::fmt_print("hello %v %v %v\n", x, 1, y);
+		tsf::fmt_print("hello %v %v %v %v\n", x, 1, 2, 3);
+		tsf::fmt_print("one %v three\n", 2);
 	}
 	{
 		uberlog::Logger log;

@@ -5,6 +5,10 @@
 typedef SSIZE_T ssize_t;
 #endif
 
+#ifndef TSF_FMT_API
+#define TSF_FMT_API
+#endif
+
 #include <stdarg.h>
 #include <stdint.h>
 #include <string>
@@ -15,8 +19,8 @@ namespace tsf {
 
 tsf: A small, typesafe, cross-platform printf replacement (tested on Windows & linux).
 
-We use snprintf as a backend, so all of the regular formatting commands
-that you expect from the printf family of functions work.
+We use snprintf as a backend, so all of the regular formatting
+commands that you expect from the printf family of functions work.
 This also makes the code much smaller than other implementations.
 
 Usage:
@@ -32,9 +36,12 @@ Known unsupported features:
 
 fmt() returns std::string.
 
-If you want to provide a stack-based buffer to avoid memory allocations, then you can use fmt_static_buf().
+If you want to provide a stack-based buffer to avoid memory allocations,
+then you can use fmt_static_buf().
 
-By providing a cast operator to fmtarg, you can get an arbitrary type supported as an argument, provided it fits into one of the molds of the printf family of arguments.
+By providing a cast operator to fmtarg, you can get an arbitrary type
+supported as an argument, provided it fits into one of the molds of the
+printf family of arguments.
 
 */
 
@@ -80,14 +87,34 @@ public:
 	fmtarg(double v)						: Type(TDbl), Dbl(v) {}
 };
 
+/* This can be used to add custom formatting tokens.
+The only supported characters that you can use are "Q" and "q".
+These were added for escaping SQL identifiers and SQL strings.
+*/
+struct fmt_context
+{
+	// Return the number of characters written, or -1 if outBufSize is not large enough to hold
+	// the number of characters that you need to write. Do not write a null terminator.
+	typedef size_t(*WriteSpecialFunc)(char* outBuf, size_t outBufSize, const fmtarg& val);
+
+	WriteSpecialFunc Escape_Q = nullptr;
+	WriteSpecialFunc Escape_q = nullptr;
+};
+
 struct CharLenPair
 {
 	char*  Str;
 	size_t Len;
 };
 
-std::string fmt_core(const char* fmt, ssize_t nargs, const fmtarg* args);
-CharLenPair fmt_core(const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size);
+TSF_FMT_API std::string fmt_core(const fmt_context& context, const char* fmt, ssize_t nargs, const fmtarg* args);
+TSF_FMT_API CharLenPair fmt_core(const fmt_context& context, const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size);
+
+namespace internal {
+
+inline void fmt_pack(fmtarg* pack)
+{
+}
 
 inline void fmt_pack(fmtarg* pack, const fmtarg& arg)
 {
@@ -101,13 +128,16 @@ void fmt_pack(fmtarg* pack, const fmtarg& arg, const Args&... args)
 	fmt_pack(pack + 1, args...);
 }
 
+}
+
 template<typename... Args>
 std::string fmt(const char* fs, const Args&... args)
 {
 	const auto num_args = sizeof...(Args);
 	fmtarg pack_array[num_args + 1]; // +1 for zero args case
-	fmt_pack(pack_array, args...);
-	return fmt_core(fs, (ssize_t) num_args, pack_array);
+	internal::fmt_pack(pack_array, args...);
+	fmt_context cx;
+	return fmt_core(cx, fs, (ssize_t) num_args, pack_array);
 }
 
 // If the formatted string, with null terminator, fits inside staticbuf_len, then the returned pointer is staticbuf,
@@ -119,8 +149,9 @@ CharLenPair fmt_static_buf(char* staticbuf, size_t staticbuf_len, const char* fs
 {
 	const auto num_args = sizeof...(Args);
 	fmtarg pack_array[num_args + 1]; // +1 for zero args case
-	fmt_pack(pack_array, args...);
-	return fmt_core(fs, (ssize_t) num_args, pack_array, staticbuf, staticbuf_len);
+	internal::fmt_pack(pack_array, args...);
+	fmt_context cx;
+	return fmt_core(cx, fs, (ssize_t) num_args, pack_array, staticbuf, staticbuf_len);
 }
 
 template<typename... Args>
@@ -131,7 +162,7 @@ size_t fmt_write(FILE* file, const char* fs, const Args&... args)
 }
 
 template<typename... Args>
-size_t fmt_write(const char* fs, const Args&... args)
+size_t fmt_print(const char* fs, const Args&... args)
 {
 	return fmt_write(stdout, fs, args...);
 }
@@ -145,9 +176,6 @@ size_t fmt_write(const char* fs, const Args&... args)
 		-1				Not enough space
 		0..count-1		Number of characters written, excluding the null terminator. The null terminator was written though.
 */
-int fmt_snprintf(char* destination, size_t count, const char* format_str, ...);
-
-// Identical in all respects to fmt_snprintf, except that we deal with wide character strings
-int fmt_swprintf(wchar_t* destination, size_t count, const wchar_t* format_str, ...);
+TSF_FMT_API int fmt_snprintf(char* destination, size_t count, const char* format_str, ...);
 
 } // namespace tsf

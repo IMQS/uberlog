@@ -120,11 +120,6 @@ public:
 			delete[] res.Str;
 	}
 
-	void LogFmt(const char* format_str)
-	{
-		LogRaw(format_str, strlen(format_str));
-	}
-
 private:
 	std::string             Filename;
 	size_t                  RingBufferSize            = 1024 * 1024;
