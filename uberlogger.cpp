@@ -60,6 +60,9 @@ public:
 				return false;
 		}
 
+		if (len == 0)
+			return true;
+
 		// ignore the possibility that write() is allowed to write less than 'len' bytes.
 		auto res = write(FD, buf, len);
 		if (res == -1)
@@ -218,16 +221,18 @@ private:
 class LoggerSlave
 {
 public:
-	std::atomic<bool> IsParentDead = false;
-	uint32_t          ParentPID    = 0;
-	uint32_t          RingSize     = 0;
-	RingBuffer        Ring;
-	shm_handle_t      ShmHandle = internal::NullShmHandle;
-	std::thread       WatcherThread;
-	std::string       Filename;
-	int64_t           MaxLogSize     = 30 * 1024 * 1024;
-	int32_t           MaxNumArchives = 3;
-	LogFile           Log;
+	static const size_t WriteBufSize = 4096; // Too large, we waste memory bandwidth. Too small, means too many kernel calls.
+	std::atomic<bool>   IsParentDead = false;
+	uint32_t            ParentPID    = 0;
+	uint32_t            RingSize     = 0;
+	RingBuffer          Ring;
+	shm_handle_t        ShmHandle = internal::NullShmHandle;
+	std::thread         WatcherThread;
+	std::string         Filename;
+	int64_t             MaxLogSize     = 30 * 1024 * 1024;
+	int32_t             MaxNumArchives = 3;
+	LogFile             Log;
+	char*               WriteBuf = nullptr;
 
 #ifdef _WIN32
 	HANDLE CloseMessageEvent = NULL;
@@ -238,6 +243,8 @@ public:
 	void Run()
 	{
 		printf("uberlog writer [%s, %d MB max size, %d archives] is starting\n", Filename.c_str(), (int) (MaxLogSize / 1024 / 1024), (int) MaxNumArchives);
+
+		WriteBuf = new char[WriteBufSize];
 
 #ifdef _WIN32
 		CloseMessageEvent = CreateEvent(NULL, true, false, NULL);
@@ -282,6 +289,7 @@ public:
 		CloseHandle(CloseMessageEvent);
 		CloseMessageEvent = NULL;
 #endif
+		delete[] WriteBuf;
 	}
 
 private:
@@ -345,15 +353,19 @@ private:
 
 	void ReadMessages()
 	{
+		// Buffer up messages, so that we don't issue an OS write for every message
+		size_t bufpos = 0;
+
 		while (true)
 		{
 			MessageHead head;
 			size_t      avail = Ring.AvailableForRead();
 			if (avail < sizeof(head))
-				return;
+				break;
 
 			if (Ring.Read(&head, sizeof(head)) != sizeof(head))
 				Panic("ring.Read(head) failed");
+			avail -= sizeof(head);
 
 			switch (head.Cmd)
 			{
@@ -362,21 +374,50 @@ private:
 				break;
 			case Command::LogMsg:
 			{
-				void*  ptr1  = nullptr;
-				void*  ptr2  = nullptr;
-				size_t size1 = 0;
-				size_t size2 = 0;
-				Ring.ReadNoCopy(head.PayloadLen, ptr1, size1, ptr2, size2);
-				bool ok = Log.Write(ptr1, size1);
-				if (ok && size2 != 0)
-					ok = Log.Write(ptr2, size2);
-				if (!ok)
-					OutOfBandWarning("Failed to write to log file");
+				if (avail < head.PayloadLen)
+					Panic("ring.Read: message payload not available in ring buffer");
+
+				if (head.PayloadLen > WriteBufSize - bufpos)
+				{
+					if (!Log.Write(WriteBuf, bufpos))
+						OutOfBandWarning("Failed to write to log file");
+					bufpos = 0;
+				}
+
+				if (head.PayloadLen <= WriteBufSize - bufpos)
+				{
+					// store message in buffer
+					Ring.Read(WriteBuf + bufpos, head.PayloadLen);
+					bufpos += head.PayloadLen;
+				}
+				else
+				{
+					// log message is too large to buffer. write it directly
+					if (bufpos != 0)
+						Panic("ring.Read: should have flushed log");
+					void*  ptr1  = nullptr;
+					void*  ptr2  = nullptr;
+					size_t size1 = 0;
+					size_t size2 = 0;
+					Ring.ReadNoCopy(head.PayloadLen, ptr1, size1, ptr2, size2);
+					bool ok = Log.Write(ptr1, size1);
+					if (ok && size2 != 0)
+						ok = Log.Write(ptr2, size2);
+					if (!ok)
+						OutOfBandWarning("Failed to write to log file");
+				}
 				break;
 			}
 			default:
 				Panic("Unexpected command");
 			}
+		}
+
+		// flush write buffer
+		if (bufpos != 0)
+		{
+			if (!Log.Write(WriteBuf, bufpos))
+				OutOfBandWarning("Failed to write to log file");
 		}
 	}
 
