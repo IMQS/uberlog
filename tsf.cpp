@@ -1,3 +1,7 @@
+// For license, see https://github.com/IMQS/tsf
+#ifndef TSF_CPP_INCLUDED
+#define TSF_CPP_INCLUDED
+
 #include "tsf.h"
 #include <assert.h>
 
@@ -166,14 +170,14 @@ TSF_FMT_API std::string fmt_core(const fmt_context& context, const char* fmt, ss
 {
 	static const size_t bufsize = 256;
 	char staticbuf[bufsize];
-	CharLenPair res = fmt_core(context, fmt, nargs, args, staticbuf, bufsize);
+	StrLenPair res = fmt_core(context, fmt, nargs, args, staticbuf, bufsize);
 	std::string str(res.Str, res.Len);
 	if (res.Str != staticbuf)
 		delete[] res.Str;
 	return str;
 }
 
-TSF_FMT_API CharLenPair fmt_core(const fmt_context& context, const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size)
+TSF_FMT_API StrLenPair fmt_core(const fmt_context& context, const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size)
 {
 	ssize_t tokenstart = -1;	// true if we have passed a %, and are looking for the end of the token
 	ssize_t iarg = 0;
@@ -320,3 +324,5 @@ TSF_FMT_API int fmt_snprintf(char* destination, size_t count, const char* format
 }
 
 } // namespace tsf
+
+#endif

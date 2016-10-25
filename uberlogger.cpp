@@ -218,16 +218,16 @@ private:
 class LoggerSlave
 {
 public:
-	bool        IsParentDead = false;
-	uint32_t    ParentPID    = 0;
-	uint32_t    RingSize     = 0;
-	RingBuffer Ring;
-	shm_handle_t ShmHandle = internal::NullShmHandle;
-	std::thread WatcherThread;
-	std::string Filename;
-	int64_t     MaxLogSize     = 30 * 1024 * 1024;
-	int32_t     MaxNumArchives = 3;
-	LogFile     Log;
+	std::atomic<bool> IsParentDead = false;
+	uint32_t          ParentPID    = 0;
+	uint32_t          RingSize     = 0;
+	RingBuffer        Ring;
+	shm_handle_t      ShmHandle = internal::NullShmHandle;
+	std::thread       WatcherThread;
+	std::string       Filename;
+	int64_t           MaxLogSize     = 30 * 1024 * 1024;
+	int32_t           MaxNumArchives = 3;
+	LogFile           Log;
 
 #ifdef _WIN32
 	HANDLE CloseMessageEvent = NULL;
@@ -273,7 +273,7 @@ public:
 		if (IsParentDead)
 			printf("uberlog is stopping: parent is dead\n");
 
-		SleepMS(500); // DEBUG
+		//SleepMS(60000); // DEBUG
 
 		if (watcherThread.joinable())
 			watcherThread.join();
@@ -326,7 +326,7 @@ private:
 	bool OpenRingBuffer()
 	{
 		shm_handle_t shm = NullShmHandle;
-		void* buf = nullptr;
+		void*        buf = nullptr;
 		if (!SetupSharedMemory(ParentPID, Filename.c_str(), SharedMemSizeFromRingSize(RingSize), false, shm, buf))
 			return false;
 		ShmHandle = shm;
@@ -345,35 +345,38 @@ private:
 
 	void ReadMessages()
 	{
-		MessageHead head;
-		size_t      avail = Ring.AvailableForRead();
-		if (avail < sizeof(head))
-			return;
-
-		if (Ring.Read(&head, sizeof(head)) != sizeof(head))
-			Panic("ring.Read(head) failed");
-
-		switch (head.Cmd)
+		while (true)
 		{
-		case Command::Close:
-			SetReceivedCloseMessage();
-			break;
-		case Command::LogMsg:
-		{
-			void*  ptr1  = nullptr;
-			void*  ptr2  = nullptr;
-			size_t size1 = 0;
-			size_t size2 = 0;
-			Ring.ReadNoCopy(head.PayloadLen, ptr1, size1, ptr2, size2);
-			bool ok = Log.Write(ptr1, size1);
-			if (ok && size2 != 0)
-				ok = Log.Write(ptr2, size2);
-			if (!ok)
-				OutOfBandWarning("Failed to write to log file");
-			break;
-		}
-		default:
-			Panic("Unexpected command");
+			MessageHead head;
+			size_t      avail = Ring.AvailableForRead();
+			if (avail < sizeof(head))
+				return;
+
+			if (Ring.Read(&head, sizeof(head)) != sizeof(head))
+				Panic("ring.Read(head) failed");
+
+			switch (head.Cmd)
+			{
+			case Command::Close:
+				SetReceivedCloseMessage();
+				break;
+			case Command::LogMsg:
+			{
+				void*  ptr1  = nullptr;
+				void*  ptr2  = nullptr;
+				size_t size1 = 0;
+				size_t size2 = 0;
+				Ring.ReadNoCopy(head.PayloadLen, ptr1, size1, ptr2, size2);
+				bool ok = Log.Write(ptr1, size1);
+				if (ok && size2 != 0)
+					ok = Log.Write(ptr2, size2);
+				if (!ok)
+					OutOfBandWarning("Failed to write to log file");
+				break;
+			}
+			default:
+				Panic("Unexpected command");
+			}
 		}
 	}
 

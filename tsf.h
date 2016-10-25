@@ -1,19 +1,7 @@
+// For license, see https://github.com/IMQS/tsf
 #pragma once
-
-#if defined(_MSC_VER)
-#include <basetsd.h>
-typedef SSIZE_T ssize_t;
-#endif
-
-#ifndef TSF_FMT_API
-#define TSF_FMT_API
-#endif
-
-#include <stdarg.h>
-#include <stdint.h>
-#include <string>
-
-namespace tsf {
+#ifndef TSF_H_INCLUDED
+#define TSF_H_INCLUDED
 
 /*
 
@@ -35,15 +23,30 @@ Known unsupported features:
 * %*s (integer width parameter)	-- wouldn't be hard to add. Presently ignored.
 
 fmt() returns std::string.
-
-If you want to provide a stack-based buffer to avoid memory allocations,
-then you can use fmt_static_buf().
+fmt_buf() is useful if you want to provide your own buffer to avoid memory allocations.
+printfmt() prints to stdout
+printfmt(FILE*) prints to any FILE*
 
 By providing a cast operator to fmtarg, you can get an arbitrary type
 supported as an argument, provided it fits into one of the molds of the
 printf family of arguments.
 
 */
+
+#if defined(_MSC_VER)
+#include <basetsd.h>
+typedef SSIZE_T ssize_t;
+#endif
+
+#ifndef TSF_FMT_API
+#define TSF_FMT_API
+#endif
+
+#include <stdarg.h>
+#include <stdint.h>
+#include <string>
+
+namespace tsf {
 
 class fmtarg
 {
@@ -101,14 +104,14 @@ struct fmt_context
 	WriteSpecialFunc Escape_q = nullptr;
 };
 
-struct CharLenPair
+struct StrLenPair
 {
 	char*  Str;
 	size_t Len;
 };
 
 TSF_FMT_API std::string fmt_core(const fmt_context& context, const char* fmt, ssize_t nargs, const fmtarg* args);
-TSF_FMT_API CharLenPair fmt_core(const fmt_context& context, const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size);
+TSF_FMT_API StrLenPair  fmt_core(const fmt_context& context, const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size);
 
 namespace internal {
 
@@ -145,26 +148,26 @@ std::string fmt(const char* fs, const Args&... args)
 // However, if the formatted string is too large to fit inside staticbuf_len, then the returned pointer must
 // be deleted with "delete[] ptr".
 template<typename... Args>
-CharLenPair fmt_static_buf(char* staticbuf, size_t staticbuf_len, const char* fs, const Args&... args)
+StrLenPair fmt_buf(char* buf, size_t buf_len, const char* fs, const Args&... args)
 {
 	const auto num_args = sizeof...(Args);
 	fmtarg pack_array[num_args + 1]; // +1 for zero args case
 	internal::fmt_pack(pack_array, args...);
 	fmt_context cx;
-	return fmt_core(cx, fs, (ssize_t) num_args, pack_array, staticbuf, staticbuf_len);
+	return fmt_core(cx, fs, (ssize_t) num_args, pack_array, buf, buf_len);
 }
 
 template<typename... Args>
-size_t fmt_write(FILE* file, const char* fs, const Args&... args)
+size_t printfmt(FILE* file, const char* fs, const Args&... args)
 {
 	auto res = fmt(fs, args...);
 	return fwrite(res.c_str(), 1, res.length(), file);
 }
 
 template<typename... Args>
-size_t fmt_print(const char* fs, const Args&... args)
+size_t printfmt(const char* fs, const Args&... args)
 {
-	return fmt_write(stdout, fs, args...);
+	return printfmt(stdout, fs, args...);
 }
 
 /*  cross-platform "snprintf"
@@ -179,3 +182,5 @@ size_t fmt_print(const char* fs, const Args&... args)
 TSF_FMT_API int fmt_snprintf(char* destination, size_t count, const char* format_str, ...);
 
 } // namespace tsf
+
+#endif

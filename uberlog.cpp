@@ -57,6 +57,10 @@ proc_id_t GetMyPID()
 {
 	return GetCurrentProcessId();
 }
+proc_id_t GetMyTID()
+{
+	return GetCurrentThreadId();
+}
 std::string GetMyExePath()
 {
 	char buf[4096];
@@ -121,6 +125,10 @@ bool WaitForProcessToDie(proc_handle_t handle, proc_id_t pid, uint32_t milliseco
 proc_id_t GetMyPID()
 {
 	return getpid();
+}
+proc_id_t GetMyTID()
+{
+	return gettid();
 }
 std::string GetMyExePath()
 {
@@ -442,6 +450,7 @@ size_t RingBuffer::AvailableForWrite()
 
 Logger::Logger()
 {
+	Level = uberlog::Level::Info;
 }
 
 Logger::~Logger()
@@ -491,6 +500,11 @@ void Logger::SetArchiveSettings(int64_t maxFileSize, int32_t maxNumArchives)
 	MaxNumArchives = maxNumArchives;
 }
 
+void Logger::SetLevel(uberlog::Level level)
+{
+	Level = level;
+}
+
 void Logger::LogRaw(const void* data, size_t len)
 {
 	if (!IsOpen)
@@ -498,6 +512,12 @@ void Logger::LogRaw(const void* data, size_t len)
 		OutOfBandWarning("Logger.LogRaw called but log is not open\n");
 		return;
 	}
+	if (sizeof(MessageHead) + len > Ring.AvailableForWrite())
+	{
+		OutOfBandWarning("Logger.LogRaw called with a payload that is too large (%lld > %lld)\n", (long long) len, (long long) (Ring.AvailableForWrite() - sizeof(MessageHead)));
+		return;
+	}
+
 	NumLogMessagesSent++;
 	SendMessage(Command::LogMsg, data, len);
 	if (NumLogMessagesSent == 1)
@@ -551,6 +571,9 @@ void Logger::SendMessage(internal::Command cmd, const void* payload, size_t payl
 	MessageHead msg;
 	msg.Cmd        = cmd;
 	msg.PayloadLen = payload_len;
+
+	if (sizeof(msg) + payload_len > Ring.MaxAvailableForWrite())
+		Panic("Attempt to write too much data to the ring buffer");
 
 	while (true)
 	{

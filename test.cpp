@@ -13,9 +13,9 @@ int main(int argc, char** argv)
 	{
 		std::string x = "x";
 		std::string y = "yy";
-		auto test1 = tsf::fmt_print("hello %v %v %v\n", x, 1, y);
-		tsf::fmt_print("hello %v %v %v %v\n", x, 1, 2, 3);
-		tsf::fmt_print("one %v three\n", 2);
+		auto test1 = tsf::printfmt("hello %v %v %v\n", x, 1, y);
+		tsf::printfmt("hello %v %v %v %v\n", x, 1, 2, 3);
+		tsf::printfmt("one %v three\n", 2);
 	}
 	{
 		uberlog::Logger log;
@@ -23,6 +23,9 @@ int main(int argc, char** argv)
 		printf("log opened\n");
 		log.LogFmt("hello %v %v\r\n", 5, "five");
 		log.LogFmt("yellow\r\n");
+		log.LogDefaultFormat(uberlog::Level::Info, "the quick %v %v", "brown", "fox");
+		log.LogDefaultFormat(uberlog::Level::Info, "the quick %v %v       a longer longer longer string that doesn't fit into the static buffer!", "brown", "fox fox fox rabbit rabbit rabbit");
+		log.LogDefaultFormat(uberlog::Level::Warn, "moooar!");
 	}
 
 	printf("parent exiting\n");
