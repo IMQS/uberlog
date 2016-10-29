@@ -2,6 +2,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #define NOMINMAX
 #include <windows.h>
+#include <sys/types.h>
 #else
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -12,8 +13,14 @@
 #include <chrono>
 #include <assert.h>
 #include <stdint.h>
+#include <sys/timeb.h>
 
 #include "uberlog.h"
+
+#ifdef _WIN32
+#define ftime _ftime
+#define timeb _timeb
+#endif
 
 using namespace uberlog::internal;
 
@@ -38,7 +45,7 @@ bool ProcessCreate(const char* cmd, const char* args, proc_handle_t& handle, pro
 	buf += args;
 	DWORD flags = 0;
 	//flags |= CREATE_SUSPENDED; // Useful for debugging
-	flags |= CREATE_NEW_CONSOLE; // Useful for debugging
+	//flags |= CREATE_NEW_CONSOLE; // Useful for debugging
 	if (!CreateProcess(NULL, &buf[0], NULL, NULL, false, flags, NULL, NULL, &si, &pi))
 		return false;
 	//ResumeThread(pi.hThread);
@@ -224,6 +231,20 @@ void Panic(const char* msg)
 	*((int*) 0) = 1;
 }
 
+std::string FullPath(const char* relpath)
+{
+#ifdef _WIN32
+	char* full = _fullpath(nullptr, relpath, 0);
+#else
+	char* full = realpath(relpath, nullptr);
+#endif
+	if (!full)
+		return relpath;
+	std::string copy = full;
+	free(full);
+	return copy;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -381,23 +402,27 @@ size_t RingBuffer::Read(void* data, size_t max_len)
 	uint8_t* data8 = (uint8_t*) data;
 	size_t   copy  = std::min((size_t) max_len, AvailableForRead());
 	size_t   readp = ReadPtr()->load();
-	if (readp + copy > Size)
+	if (data != nullptr)
 	{
-		// split
-		auto part1 = Size - readp;
-		memcpy(data8, Buf + readp, part1);
-		memcpy(data8 + part1, Buf, copy - part1);
-	}
-	else
-	{
-		memcpy(data8, Buf + readp, copy);
+		if (readp + copy > Size)
+		{
+			// split
+			auto part1 = Size - readp;
+			memcpy(data8, Buf + readp, part1);
+			memcpy(data8 + part1, Buf, copy - part1);
+		}
+		else
+		{
+			memcpy(data8, Buf + readp, copy);
+		}
 	}
 	ReadPtr()->store((readp + copy) & (Size - 1));
 	return copy;
 }
 
 // Fetch one or two pointers into the ring buffer, which hold the location of the readable data.
-// Increments the read pointer by len.
+// Does not increment the read pointer. You must call Read(null, len) once you've copied the
+// data out of the ring buffer.
 void RingBuffer::ReadNoCopy(size_t len, void*& ptr1, size_t& ptr1_size, void*& ptr2, size_t& ptr2_size)
 {
 	if (len > AvailableForRead())
@@ -417,8 +442,6 @@ void RingBuffer::ReadNoCopy(size_t len, void*& ptr1, size_t& ptr1_size, void*& p
 		ptr2      = Buf;
 		ptr2_size = len - ptr1_size;
 	}
-
-	ReadPtr()->store((pos1 + len) & (Size - 1));
 }
 
 std::atomic<size_t>* RingBuffer::ReadPtr()
@@ -460,7 +483,7 @@ Logger::~Logger()
 
 void Logger::Open(const char* filename)
 {
-	Filename = filename;
+	Filename = FullPath(filename);
 	Open();
 }
 
@@ -469,8 +492,12 @@ void Logger::Close()
 	if (!IsOpen)
 		return;
 
+	// Always wait 10 seconds for our child to exit.
+	// Waiting is nice behaviour, because the caller knows that he can manipulate the log file after Close() returns.
+	uint32_t timeout = 10000;
+
 	SendMessage(Command::Close, nullptr, 0);
-	WaitForProcessToDie(HChildProcess, ChildPID, 0);
+	WaitForProcessToDie(HChildProcess, ChildPID, timeout);
 
 	HChildProcess = nullptr;
 	ChildPID      = -1;
@@ -512,10 +539,21 @@ void Logger::LogRaw(const void* data, size_t len)
 		OutOfBandWarning("Logger.LogRaw called but log is not open\n");
 		return;
 	}
-	if (sizeof(MessageHead) + len > Ring.AvailableForWrite())
+	
+	size_t maxLen = Ring.MaxAvailableForWrite() - sizeof(MessageHead);
+
+	if (len > maxLen)
 	{
-		OutOfBandWarning("Logger.LogRaw called with a payload that is too large (%lld > %lld)\n", (long long) len, (long long) (Ring.AvailableForWrite() - sizeof(MessageHead)));
-		return;
+		OutOfBandWarning("Log message truncated from %lld to %lld\n", (long long) len, (long long) maxLen);
+		len = maxLen;
+	}
+	
+	for (int64_t i = 0; len > Ring.AvailableForWrite() - sizeof(MessageHead); i++)
+	{
+		// Wait for slave to consume ring buffer
+		SleepMS(i < 2 ? 0 : 5);
+		if (i == 100)
+			OutOfBandWarning("Waiting for log writer slave to flush queue");
 	}
 
 	NumLogMessagesSent++;
@@ -561,7 +599,7 @@ bool Logger::Open()
 		return false;
 	}
 
-	IsOpen = true;
+	IsOpen             = true;
 	NumLogMessagesSent = 0;
 	return true;
 }
@@ -570,7 +608,11 @@ void Logger::SendMessage(internal::Command cmd, const void* payload, size_t payl
 {
 	MessageHead msg;
 	msg.Cmd        = cmd;
+	msg.Seq = SeqNumber++;
 	msg.PayloadLen = payload_len;
+	char hashKey[16] = {0};
+	if (payload_len != 0)
+		msg.Hash = siphash24(payload, payload_len, hashKey);
 
 	if (sizeof(msg) + payload_len > Ring.MaxAvailableForWrite())
 		Panic("Attempt to write too much data to the ring buffer");
@@ -595,6 +637,7 @@ bool Logger::CreateRingBuffer()
 	if (!SetupSharedMemory(GetMyPID(), Filename.c_str(), SharedMemSizeFromRingSize(RingBufferSize), true, shm, buf))
 		return false;
 	ShmHandle = shm;
+	SeqNumber = 0;
 	Ring.Init(buf, RingBufferSize, true);
 	return true;
 }
@@ -619,8 +662,70 @@ bool Logger::WaitForRingToBeEmpty(uint32_t milliseconds)
 			return false;
 	}
 	auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start);
-	printf("took %d for initial drain\n", (int) elapsed_ms.count());
+	//printf("took %d for initial drain\n", (int) elapsed_ms.count());
 	return true;
+}
+
+void Logger::LogDefaultFormat_Phase2(uberlog::Level level, tsf::StrLenPair msg, bool buf_is_static)
+{
+	// [------------- 42 characters ------------]
+	// [------ 28 characters -----]
+	// 2015-07-15T14:53:51.979+0200 [I] 00001fdc The log message here
+
+	char*  buf;
+	size_t bufsize = 42 + msg.Len + EolLen + 1;
+	if (buf_is_static)
+	{
+		buf = msg.Str - 42;
+	}
+	else
+	{
+		buf = new char[bufsize];
+		memcpy(buf + 42, msg.Str, msg.Len);
+		delete[] msg.Str;
+	}
+
+	// Write the first part of the log message into buf. This is the time, the log level, and the thread id
+	if (_Test_OverridePrefix[0] != 0)
+	{
+		memcpy(buf, _Test_OverridePrefix, 42);
+	}
+	else
+	{
+		timeb t1;
+		ftime(&t1);
+		t1.time -= t1.timezone * 60;
+		tm t2;
+		gmtime_s(&t2, &t1.time);
+		strftime(buf, 32, "%Y-%m-%dT%H:%M:%S.000+0000", &t2);
+		int tzhour = abs(t1.timezone) / 60;
+		int tzmin  = abs(t1.timezone) % 60;
+		if (t1.timezone < 0)
+			snprintf(buf + 20, bufsize - 20, "%03d+%02d%02d", t1.millitm, tzhour, tzmin);
+		else
+			snprintf(buf + 20, bufsize - 20, "%03d-%02d%02d", t1.millitm, tzhour, tzmin);
+		snprintf(buf + 28, bufsize - 28, " [%c] %08x", LevelChar(level), (unsigned int) uberlog::internal::GetMyTID());
+	}
+	buf[41] = ' ';
+	if (uberlog::internal::UseCRLF)
+	{
+		buf[42 + msg.Len] = '\r';
+		buf[43 + msg.Len] = '\n';
+		buf[44 + msg.Len] = 0;
+	}
+	else
+	{
+		buf[42 + msg.Len] = '\n';
+		buf[43 + msg.Len] = 0;
+	}
+
+	LogRaw(buf, bufsize - 1);
+
+	if (!buf_is_static)
+		delete[] buf;
+
+	if (level == Level::Fatal)
+		Panic(buf);
 }
 
 } // namespace uberlog

@@ -19,10 +19,12 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\tsf.cpp" />
     <ClCompile Include="..\..\uberlog.cpp" />
     <ClCompile Include="..\..\uberlogger.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\tsf.h" />
     <ClInclude Include="..\..\uberlog.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

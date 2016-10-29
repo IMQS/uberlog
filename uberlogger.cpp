@@ -4,6 +4,7 @@ Here we consume log messages from the ring buffer, and write them
 into the log file.
 */
 #ifdef _WIN32
+#define NOMINMAX
 #include <windows.h>
 #include <io.h>
 #include <fcntl.h>
@@ -221,16 +222,21 @@ private:
 class LoggerSlave
 {
 public:
-	static const size_t WriteBufSize = 4096; // Too large, we waste memory bandwidth. Too small, means too many kernel calls.
-	std::atomic<bool>   IsParentDead = false;
-	uint32_t            ParentPID    = 0;
-	uint32_t            RingSize     = 0;
+	static const size_t WriteBufSize        = LoggerSlaveWriteBufferSize;
+	bool                EnableDebugMessages = false;
+	std::atomic<bool>   IsParentDead        = false;
+	uint32_t            ParentPID           = 0;
+	uint32_t            SeqNumber           = 0;
+	uint32_t            RingSize            = 0;
 	RingBuffer          Ring;
 	shm_handle_t        ShmHandle = internal::NullShmHandle;
 	std::thread         WatcherThread;
 	std::string         Filename;
-	int64_t             MaxLogSize     = 30 * 1024 * 1024;
-	int32_t             MaxNumArchives = 3;
+	int64_t             MaxLogSize         = 30 * 1024 * 1024;
+	int32_t             MaxNumArchives     = 3;
+	uint32_t            MinSleepMS         = 16;
+	uint32_t            MaxSleepMS         = 1024;
+	uint32_t            WaitForOpenSleepMS = 256; // Our sleep periods when we're waiting for the ring buffer to be opened
 	LogFile             Log;
 	char*               WriteBuf = nullptr;
 
@@ -242,7 +248,7 @@ public:
 
 	void Run()
 	{
-		printf("uberlog writer [%s, %d MB max size, %d archives] is starting\n", Filename.c_str(), (int) (MaxLogSize / 1024 / 1024), (int) MaxNumArchives);
+		DebugMsg("uberlog writer [%v, %v MB max size, %v archives] is starting\n", Filename, MaxLogSize / 1024 / 1024, MaxNumArchives);
 
 		WriteBuf = new char[WriteBufSize];
 
@@ -257,15 +263,29 @@ public:
 		// Try to open file immediately, for consistency & predictability sake
 		Log.Open();
 
+		uint32_t sleepMS = MinSleepMS;
+
 		while (!IsParentDead && !HasReceivedCloseMessage())
 		{
+			bool idle = false;
 			if (!Ring.Buf)
 				OpenRingBuffer();
 			if (Ring.Buf)
-				ReadMessages();
+			{
+				uint64_t nmessages = ReadMessages();
+				if (nmessages == 0)
+					idle = true;
+			}
+
+			if (idle)
+				sleepMS = std::min(sleepMS * 2, MaxSleepMS);
+			else if (Ring.Buf)
+				sleepMS = MinSleepMS;
+			else
+				sleepMS = WaitForOpenSleepMS;
 
 			PollForParentProcessDeath(); // Not used on Windows
-			internal::SleepMS(1000);
+			internal::SleepMS(sleepMS);
 		}
 
 		// Drain the buffer
@@ -275,12 +295,12 @@ public:
 		Log.Close();
 
 		if (HasReceivedCloseMessage())
-			printf("uberlog is stopping: received Close instruction\n");
+			DebugMsg("uberlog is stopping: received Close instruction\n");
 
 		if (IsParentDead)
-			printf("uberlog is stopping: parent is dead\n");
+			DebugMsg("uberlog is stopping: parent is dead\n");
 
-		//SleepMS(60000); // DEBUG
+		//SleepMS(2000); // DEBUG
 
 		if (watcherThread.joinable())
 			watcherThread.join();
@@ -338,6 +358,7 @@ private:
 		if (!SetupSharedMemory(ParentPID, Filename.c_str(), SharedMemSizeFromRingSize(RingSize), false, shm, buf))
 			return false;
 		ShmHandle = shm;
+		SeqNumber = 0;
 		Ring.Init(buf, RingSize, false);
 		return true;
 	}
@@ -351,10 +372,12 @@ private:
 		ShmHandle = NullShmHandle;
 	}
 
-	void ReadMessages()
+	// Returns number of log messages consumed
+	uint64_t ReadMessages()
 	{
 		// Buffer up messages, so that we don't issue an OS write for every message
-		size_t bufpos = 0;
+		size_t   bufpos    = 0;
+		uint64_t nmessages = 0;
 
 		while (true)
 		{
@@ -367,6 +390,15 @@ private:
 				Panic("ring.Read(head) failed");
 			avail -= sizeof(head);
 
+			//if (SeqNumber == 7)
+			//	int abc = 123;
+			//DebugMsg("%u -> %u\n", head.Seq, SeqNumber);
+
+			if (SeqNumber != head.Seq)
+				DebugMsg("Invalid sequence number (%u. expected %u)\n", head.Seq, SeqNumber);
+			SeqNumber++;
+			char hashKey[16] = {0};
+
 			switch (head.Cmd)
 			{
 			case Command::Close:
@@ -374,6 +406,7 @@ private:
 				break;
 			case Command::LogMsg:
 			{
+				nmessages++;
 				if (avail < head.PayloadLen)
 					Panic("ring.Read: message payload not available in ring buffer");
 
@@ -387,24 +420,40 @@ private:
 				if (head.PayloadLen <= WriteBufSize - bufpos)
 				{
 					// store message in buffer
-					Ring.Read(WriteBuf + bufpos, head.PayloadLen);
+					size_t nread = Ring.Read(WriteBuf + bufpos, head.PayloadLen);
+					if (nread != head.PayloadLen)
+						DebugMsg("unable to read all of payload\n");
+					if (head.PayloadLen != 0)
+					{
+						uint64_t hash = siphash24(WriteBuf + bufpos, head.PayloadLen, hashKey);
+						if (hash != head.Hash)
+							DebugMsg("hash mismatch a\n");
+					}
 					bufpos += head.PayloadLen;
 				}
 				else
 				{
 					// log message is too large to buffer. write it directly
 					if (bufpos != 0)
-						Panic("ring.Read: should have flushed log");
+						Panic("ring.Read: should have flushed log"); // the Log.Write call 10 lines above should have done this already
 					void*  ptr1  = nullptr;
 					void*  ptr2  = nullptr;
 					size_t size1 = 0;
 					size_t size2 = 0;
 					Ring.ReadNoCopy(head.PayloadLen, ptr1, size1, ptr2, size2);
+					//char* hashbuf = new char[size1 + size2];
+					//memcpy(hashbuf, ptr1, size1);
+					//memcpy(hashbuf + size1, ptr2, size2);
+					//uint64_t hash = siphash24(hashbuf, head.PayloadLen, hashKey);
+					//if (hash != head.Hash)
+					//	DebugMsg("hash mismatch b\n");
+
 					bool ok = Log.Write(ptr1, size1);
 					if (ok && size2 != 0)
 						ok = Log.Write(ptr2, size2);
 					if (!ok)
 						OutOfBandWarning("Failed to write to log file");
+					Ring.Read(nullptr, head.PayloadLen);
 				}
 				break;
 			}
@@ -419,6 +468,8 @@ private:
 			if (!Log.Write(WriteBuf, bufpos))
 				OutOfBandWarning("Failed to write to log file");
 		}
+
+		return nmessages;
 	}
 
 	void SetReceivedCloseMessage()
@@ -437,6 +488,14 @@ private:
 #else
 		return CloseMessageFlag;
 #endif
+	}
+
+	template <typename... Args>
+	void DebugMsg(const char* msg, const Args&... args)
+	{
+		if (!EnableDebugMessages)
+			return;
+		fputs(tsf::fmt(msg, args...).c_str(), stdout);
 	}
 };
 

@@ -9,21 +9,30 @@ namespace uberlog {
 
 namespace internal {
 
+// The size of the write buffer in the logger slave. This exists so that the
+// logger slave doesn't issue a write() call for every log message.
+// If we make it too large, we waste memory bandwidth and pollute the cache.
+// If we make it too small, we issue too many kernel calls.
+// The number 4096 is a thumb suck.
+static const size_t LoggerSlaveWriteBufferSize = 4096;
+
 #ifdef _WIN32
-const char         PATH_SLASH = '\\';
-typedef HANDLE     proc_handle_t;
-typedef HANDLE     shm_handle_t;
-typedef DWORD      proc_id_t;
-const shm_handle_t NullShmHandle = NULL;
-const bool         UseCRLF       = true;
+static const char         PATH_SLASH = '\\';
+typedef HANDLE            proc_handle_t;
+typedef HANDLE            shm_handle_t;
+typedef DWORD             proc_id_t;
+static const shm_handle_t NullShmHandle = NULL;
+static const bool         UseCRLF       = true;
 #else
-const char         PATH_SLASH = '/';
-typedef void*      TProcessHandle;
-typedef int        shm_handle_t;
-typedef pid_t      TProcessID;
-const shm_handle_t NullShmHandle = -1;
-const bool         UseCRLF       = false;
+static const char         PATH_SLASH = '/';
+typedef void*             TProcessHandle;
+typedef int               shm_handle_t;
+typedef pid_t             TProcessID;
+static const shm_handle_t NullShmHandle = -1;
+static const bool         UseCRLF       = false;
 #endif
+
+class TestHelper;
 
 bool        ProcessCreate(const char* cmd, const char* args, proc_handle_t& handle, proc_id_t& pid);
 bool        WaitForProcessToDie(proc_handle_t handle, proc_id_t pid, uint32_t milliseconds);
@@ -37,6 +46,7 @@ void        CloseSharedMemory(shm_handle_t shmHandle, void* buf, size_t size);
 size_t      SharedMemSizeFromRingSize(size_t ringBufferSize);
 void        OutOfBandWarning(_In_z_ _Printf_format_string_ const char* msg, ...);
 void        Panic(const char* msg);
+std::string FullPath(const char* relpath);
 uint64_t    siphash24(const void* src, size_t src_sz, const char key[16]);
 
 /* Memory mapped ring buffer.
@@ -84,8 +94,10 @@ enum class Command : uint32_t
 // Header of a message sent over the ring buffer
 struct MessageHead
 {
-	Command  Cmd        = Command::Null;
-	uint32_t Padding    = 0; // ensure PayloadLen starts at byte 8, and entire structure is defined.
+	Command Cmd = Command::Null;
+	//uint32_t Padding    = 0; // ensure PayloadLen starts at byte 8, and entire structure is defined.
+	uint32_t Seq        = 0; // Sanity check, used for debugging. Sequence number of message.
+	uint64_t Hash = 0;
 	size_t   PayloadLen = 0;
 };
 } // namespace internal
@@ -124,6 +136,8 @@ class that inherits from this is also a reasonable approach.
 class Logger
 {
 public:
+	friend uberlog::internal::TestHelper;
+
 	Logger();
 	~Logger();
 
@@ -146,67 +160,53 @@ public:
 	// Low level "write bytes to log file"
 	void LogRaw(const void* data, size_t len);
 
-	// Write printf compatible, but type safe, formatted output to log file. See tsf.h for details
+	// Write a log message in the default uberlog format, which is "Date [Level] ThreadID Message"
 	template <typename... Args>
-	void LogFmt(const char* format_str, const Args&... args)
-	{
-		const size_t    bufsize = 160;
-		char            buf[bufsize];
-		tsf::StrLenPair res = tsf::fmt_buf(buf, bufsize, format_str, args...);
-		LogRaw(res.Str, res.Len);
-		if (res.Str != buf)
-			delete[] res.Str;
-	}
-
-	template <typename... Args>
-	void LogDefaultFormat(Level level, const char* format_str, const Args&... args)
+	void Log(Level level, const char* format_str, const Args&... args)
 	{
 		if (level < Level)
 			return;
 
-		// [-------------- 45 characters --------------]
-		// [------- 31 characters -------]
-		// 2015-07-15T14:53:51.979201+0200 [I] 00001fdc The log message here
-		const size_t statbufsize = 100;
+		// [------------- 42 characters ------------]
+		// [------ 28 characters -----]
+		// 2015-07-15T14:53:51.979+0200 [I] 00001fdc The log message here
+		const size_t statbufsize = 200;
 		char         statbuf[statbufsize];
-		char*        buf;
-		size_t       bufsize;
 
-		const int eol_len = uberlog::internal::UseCRLF ? 2 : 1;
+		tsf::StrLenPair msg = tsf::fmt_buf(statbuf + 42, statbufsize - 42 - EolLen, format_str, args...);
 
-		tsf::StrLenPair inres = tsf::fmt_buf(statbuf + 45, statbufsize - 45 - eol_len, format_str, args...);
-		bufsize               = 45 + inres.Len + eol_len + 1;
-		if (inres.Str == statbuf + 45)
-		{
-			buf = statbuf;
-		}
-		else
-		{
-			buf = new char[bufsize];
-			memcpy(buf + 45, inres.Str, inres.Len);
-			delete[] inres.Str;
-		}
+		// Split this into two phases, to reduce the amount of code in the header
+		LogDefaultFormat_Phase2(level, msg, msg.Str == statbuf + 42);
+	}
 
-		time_t t1;
-		time(&t1);
-		tm t2;
-		gmtime_s(&t2, &t1);
-		strftime(buf, 32, "%Y-%m-%dT%H:%M:%S.000000+0000", &t2);
-		snprintf(buf + 31, bufsize - 31, " [%c] %08x", LevelChar(level), (unsigned int) uberlog::internal::GetMyTID());
-		buf[44] = ' ';
-		if (uberlog::internal::UseCRLF)
-		{
-			buf[45 + inres.Len] = '\r';
-			buf[46 + inres.Len] = '\n';
-			buf[47 + inres.Len] = 0;
-		}
-		else
-		{
-			buf[45 + inres.Len] = '\n';
-			buf[46 + inres.Len] = 0;
-		}
+	template <typename... Args>
+	void Debug(const char* format_str, const Args&... args)
+	{
+		Log(uberlog::Level::Debug, format_str, args...);
+	}
 
-		LogRaw(buf, bufsize - 1);
+	template <typename... Args>
+	void Info(const char* format_str, const Args&... args)
+	{
+		Log(uberlog::Level::Info, format_str, args...);
+	}
+
+	template <typename... Args>
+	void Warn(const char* format_str, const Args&... args)
+	{
+		Log(uberlog::Level::Warn, format_str, args...);
+	}
+
+	template <typename... Args>
+	void Error(const char* format_str, const Args&... args)
+	{
+		Log(uberlog::Level::Error, format_str, args...);
+	}
+
+	template <typename... Args>
+	void Fatal(const char* format_str, const Args&... args)
+	{
+		Log(uberlog::Level::Fatal, format_str, args...);
 	}
 
 private:
@@ -216,16 +216,23 @@ private:
 	int32_t                     MaxNumArchives            = 3;
 	int64_t                     NumLogMessagesSent        = 0;
 	uint32_t                    TimeoutChildProcessInitMS = 10000; // Time we wait for our child process to come alive
+	uint32_t                    SeqNumber = 0;
+	const int                   EolLen                    = uberlog::internal::UseCRLF ? 2 : 1;
 	bool                        IsOpen                    = false;
 	std::atomic<uberlog::Level> Level;
 	internal::RingBuffer        Ring;
 	internal::proc_handle_t     HChildProcess = nullptr; // not used on linux
 	internal::proc_id_t         ChildPID      = -1;
 	internal::shm_handle_t      ShmHandle     = internal::NullShmHandle;
-	bool                        Open();
-	void                        SendMessage(internal::Command cmd, const void* payload, size_t payload_len);
-	bool                        CreateRingBuffer();
-	void                        CloseRingBuffer();
-	bool                        WaitForRingToBeEmpty(uint32_t milliseconds); // Returns true if the ring is empty
+
+	//	Special state for tests
+	char _Test_OverridePrefix[42] = {0};
+
+	bool Open();
+	void SendMessage(internal::Command cmd, const void* payload, size_t payload_len);
+	bool CreateRingBuffer();
+	void CloseRingBuffer();
+	bool WaitForRingToBeEmpty(uint32_t milliseconds); // Returns true if the ring is empty
+	void LogDefaultFormat_Phase2(uberlog::Level level, tsf::StrLenPair msg, bool buf_is_static);
 };
 }
