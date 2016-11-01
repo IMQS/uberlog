@@ -201,7 +201,10 @@ private:
 		// rename current log file
 		std::string archive = ArchiveFilename();
 		if (rename(Filename.c_str(), archive.c_str()) != 0)
+		{
+			OutOfBandWarning("Rollover failed trying to rename '%s' to '%s'\n", Filename.c_str(), archive.c_str());
 			return false;
+		}
 
 		// delete old archives, but ignore failure
 		auto archives = FindArchiveFiles();
@@ -226,7 +229,6 @@ public:
 	bool                EnableDebugMessages = false;
 	std::atomic<bool>   IsParentDead        = false;
 	uint32_t            ParentPID           = 0;
-	uint32_t            SeqNumber           = 0;
 	uint32_t            RingSize            = 0;
 	RingBuffer          Ring;
 	shm_handle_t        ShmHandle = internal::NullShmHandle;
@@ -234,7 +236,6 @@ public:
 	std::string         Filename;
 	int64_t             MaxLogSize         = 30 * 1024 * 1024;
 	int32_t             MaxNumArchives     = 3;
-	uint32_t            MinSleepMS         = 16;
 	uint32_t            MaxSleepMS         = 1024;
 	uint32_t            WaitForOpenSleepMS = 256; // Our sleep periods when we're waiting for the ring buffer to be opened
 	LogFile             Log;
@@ -263,7 +264,7 @@ public:
 		// Try to open file immediately, for consistency & predictability sake
 		Log.Open();
 
-		uint32_t sleepMS = MinSleepMS;
+		uint32_t sleepMS = 0;
 
 		while (!IsParentDead && !HasReceivedCloseMessage())
 		{
@@ -278,9 +279,9 @@ public:
 			}
 
 			if (idle)
-				sleepMS = std::min(sleepMS * 2, MaxSleepMS);
+				sleepMS = std::min(std::max(sleepMS, 1u) * 2, MaxSleepMS);
 			else if (Ring.Buf)
-				sleepMS = MinSleepMS;
+				sleepMS = 0;
 			else
 				sleepMS = WaitForOpenSleepMS;
 
@@ -358,7 +359,6 @@ private:
 		if (!SetupSharedMemory(ParentPID, Filename.c_str(), SharedMemSizeFromRingSize(RingSize), false, shm, buf))
 			return false;
 		ShmHandle = shm;
-		SeqNumber = 0;
 		Ring.Init(buf, RingSize, false);
 		return true;
 	}
@@ -390,15 +390,6 @@ private:
 				Panic("ring.Read(head) failed");
 			avail -= sizeof(head);
 
-			//if (SeqNumber == 7)
-			//	int abc = 123;
-			//DebugMsg("%u -> %u\n", head.Seq, SeqNumber);
-
-			if (SeqNumber != head.Seq)
-				DebugMsg("Invalid sequence number (%u. expected %u)\n", head.Seq, SeqNumber);
-			SeqNumber++;
-			char hashKey[16] = {0};
-
 			switch (head.Cmd)
 			{
 			case Command::Close:
@@ -422,13 +413,7 @@ private:
 					// store message in buffer
 					size_t nread = Ring.Read(WriteBuf + bufpos, head.PayloadLen);
 					if (nread != head.PayloadLen)
-						DebugMsg("unable to read all of payload\n");
-					if (head.PayloadLen != 0)
-					{
-						uint64_t hash = siphash24(WriteBuf + bufpos, head.PayloadLen, hashKey);
-						if (hash != head.Hash)
-							DebugMsg("hash mismatch a\n");
-					}
+						Panic("ring.Read: unable to read all of payload\n");
 					bufpos += head.PayloadLen;
 				}
 				else
@@ -441,13 +426,6 @@ private:
 					size_t size1 = 0;
 					size_t size2 = 0;
 					Ring.ReadNoCopy(head.PayloadLen, ptr1, size1, ptr2, size2);
-					//char* hashbuf = new char[size1 + size2];
-					//memcpy(hashbuf, ptr1, size1);
-					//memcpy(hashbuf + size1, ptr2, size2);
-					//uint64_t hash = siphash24(hashbuf, head.PayloadLen, hashKey);
-					//if (hash != head.Hash)
-					//	DebugMsg("hash mismatch b\n");
-
 					bool ok = Log.Write(ptr1, size1);
 					if (ok && size2 != 0)
 						ok = Log.Write(ptr2, size2);

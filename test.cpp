@@ -5,6 +5,7 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
 #include <stdio.h>
 #include <io.h>
 #include <fcntl.h>
@@ -116,9 +117,13 @@ std::string MakeMsg(int len, int seed = 0)
 struct LogOpenCloser
 {
 	uberlog::Logger Log;
-	LogOpenCloser()
+	LogOpenCloser(size_t ringSize = 0, size_t rollingSize = 0)
 	{
 		DeleteLogFile();
+		if (ringSize != 0)
+			Log.SetRingBufferSize(ringSize);
+		if (rollingSize != 0)
+			Log.SetArchiveSettings(rollingSize, 3);
 		Log.Open(TestLog);
 	}
 	~LogOpenCloser()
@@ -182,16 +187,18 @@ void TestRingBuffer()
 	// Bear in mind that we don't support writing log messages that are larger than our ring buffer, so we
 	// make no attempt to test that.
 	
-	static_assert(LoggerSlaveWriteBufferSize == 4096, "Alter ring sizes for test");
-	size_t ringSizes[2] = {512, 8192};
+	static_assert(LoggerSlaveWriteBufferSize == 1024, "Alter ring sizes for test");
+	static const int nringSize = 2;
+	const size_t ringSizes[nringSize] = {512, 8192};
 
 	DeleteLogFile();
 
-	for (int iRing = 0; iRing < 2; iRing++)
+	for (int iRing = 0; iRing < nringSize; iRing++)
 	{
-		// important that we have at least one write size (5297) that is greater than LoggerSlaveWriteBufferSize 
+		// important that we have at least one write size (5297) that is greater than LoggerSlaveWriteBufferSize
 		const int nsizes = 8;
-		size_t sizes[nsizes] = {1, 2, 3, 59, 113, 307, 709, 5297}; 
+		const size_t sizes[nsizes] = {1, 2, 3, 59, 113, 307, 709, 5297};
+		ASSERT(sizes[nsizes - 1] < ringSizes[nringSize - 1]); // Our 'big' write size must be smaller than our 'big' ring buffer size.
 		uberlog::Logger log;
 		log.SetRingBufferSize(ringSizes[iRing]);
 		log.Open(TestLog);
@@ -212,8 +219,34 @@ void TestRingBuffer()
 	}
 }
 
+void BenchThroughput()
+{
+	printf("RingKB MsgLen   KB/s   Msg/s\n");
+	size_t msgSizes[] = {1, 10, 200, 1000};
+	for (size_t ringKB = 64; ringKB <= 8192; ringKB *= 2)
+	{
+		int isize = 2;
+		//for (int isize = 0; isize < 4; isize++)
+		{
+			size_t mlen = msgSizes[isize];
+			LogOpenCloser oc(ringKB * 1024, 1000 * 1024 * 1024);
+			std::string msg = MakeMsg((int) mlen, 0);
+			auto start = std::chrono::system_clock::now();
+			size_t niter = 5 * 10 * 1000 * 1000 / mlen;
+			for (size_t i = 0; i < niter; i++)
+			{
+				oc.Log.LogRaw(msg.c_str(), msg.length());
+			}
+			oc.Log.Close();
+			double elapsed_s = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start).count() / 1000.0;
+			printf("%6d %6d %6.0f %7.0f\n", (int) ringKB, (int) mlen, (mlen * niter / 1024.0) / elapsed_s, niter / elapsed_s);
+		}
+	}
+}
+
 void TestAll()
 {
+	BenchThroughput();
 	TestProcessLifecycle();
 	TestFormattedWrite();
 	TestRingBuffer();

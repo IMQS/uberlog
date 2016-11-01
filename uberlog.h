@@ -13,8 +13,8 @@ namespace internal {
 // logger slave doesn't issue a write() call for every log message.
 // If we make it too large, we waste memory bandwidth and pollute the cache.
 // If we make it too small, we issue too many kernel calls.
-// The number 4096 is a thumb suck.
-static const size_t LoggerSlaveWriteBufferSize = 4096;
+// On Windows, it doesn't seem to make much of a difference above 1024.
+static const size_t LoggerSlaveWriteBufferSize = 1024;
 
 #ifdef _WIN32
 static const char         PATH_SLASH = '\\';
@@ -94,10 +94,8 @@ enum class Command : uint32_t
 // Header of a message sent over the ring buffer
 struct MessageHead
 {
-	Command Cmd = Command::Null;
-	//uint32_t Padding    = 0; // ensure PayloadLen starts at byte 8, and entire structure is defined.
-	uint32_t Seq        = 0; // Sanity check, used for debugging. Sequence number of message.
-	uint64_t Hash = 0;
+	Command  Cmd        = Command::Null;
+	uint32_t Padding    = 0; // ensure PayloadLen starts at byte 8, and entire structure is defined.
 	size_t   PayloadLen = 0;
 };
 } // namespace internal
@@ -211,12 +209,11 @@ public:
 
 private:
 	std::string                 Filename;
-	size_t                      RingBufferSize            = 1024 * 1024;
+	size_t                      RingBufferSize            = 1 * 1024 * 1024;
 	int64_t                     MaxFileSize               = 30 * 1048576;
 	int32_t                     MaxNumArchives            = 3;
 	int64_t                     NumLogMessagesSent        = 0;
 	uint32_t                    TimeoutChildProcessInitMS = 10000; // Time we wait for our child process to come alive
-	uint32_t                    SeqNumber = 0;
 	const int                   EolLen                    = uberlog::internal::UseCRLF ? 2 : 1;
 	bool                        IsOpen                    = false;
 	std::atomic<uberlog::Level> Level;

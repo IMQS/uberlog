@@ -548,14 +548,6 @@ void Logger::LogRaw(const void* data, size_t len)
 		len = maxLen;
 	}
 	
-	for (int64_t i = 0; len > Ring.AvailableForWrite() - sizeof(MessageHead); i++)
-	{
-		// Wait for slave to consume ring buffer
-		SleepMS(i < 2 ? 0 : 5);
-		if (i == 100)
-			OutOfBandWarning("Waiting for log writer slave to flush queue");
-	}
-
 	NumLogMessagesSent++;
 	SendMessage(Command::LogMsg, data, len);
 	if (NumLogMessagesSent == 1)
@@ -608,20 +600,17 @@ void Logger::SendMessage(internal::Command cmd, const void* payload, size_t payl
 {
 	MessageHead msg;
 	msg.Cmd        = cmd;
-	msg.Seq = SeqNumber++;
 	msg.PayloadLen = payload_len;
-	char hashKey[16] = {0};
-	if (payload_len != 0)
-		msg.Hash = siphash24(payload, payload_len, hashKey);
 
 	if (sizeof(msg) + payload_len > Ring.MaxAvailableForWrite())
 		Panic("Attempt to write too much data to the ring buffer");
 
-	while (true)
+	// Wait for slave to consume ring buffer
+	for (int64_t i = 0; sizeof(msg) + payload_len > Ring.AvailableForWrite(); i++)
 	{
-		if (Ring.AvailableForWrite() >= sizeof(msg) + payload_len)
-			break;
-		SleepMS(1);
+		SleepMS(i < 2 ? 0 : 5);
+		if (i == 100)
+			OutOfBandWarning("Waiting for log writer slave to flush queue");
 	}
 
 	Ring.WriteNoCommit(0, &msg, sizeof(msg));
@@ -637,7 +626,6 @@ bool Logger::CreateRingBuffer()
 	if (!SetupSharedMemory(GetMyPID(), Filename.c_str(), SharedMemSizeFromRingSize(RingBufferSize), true, shm, buf))
 		return false;
 	ShmHandle = shm;
-	SeqNumber = 0;
 	Ring.Init(buf, RingBufferSize, true);
 	return true;
 }
