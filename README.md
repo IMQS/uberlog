@@ -1,6 +1,6 @@
 # uberlog
 
-uberlog is a cross platform C++ logging system that is
+uberlog is a cross platform C++ logging system that is:
 
 1. Small
 2. Fast
@@ -55,4 +55,7 @@ If the slave is sleeping for one second, then we want to be able to emit a burst
 messages during that one second, and not stall, waiting for the slave to wake up.
 With a ring buffer size of 1 MB, the buffer can absord 5000 messages of 200 bytes.
 This seems like a reasonable burst rate for most applications. Of course, if you
-want to raise the ring size, you can do that.
+want to raise the ring size, you can do that.  
+One other thing that's very releant in choosing a ring buffer size, is the maximum
+size of a log message. Any single log message that is longer than the ring buffer,
+is truncated to the ring buffer length.

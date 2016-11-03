@@ -28,9 +28,9 @@ void Die(const char* file, int line, const char* msg)
 #endif
 
 #undef ASSERT
-#define ASSERT(f) (void) ((f) || (Die(__FILE__,__LINE__,#f), 0) )
+#define ASSERT(f) (void) ((f) || (Die(__FILE__, __LINE__, #f), 0))
 
-const char* TestLog = "utest.log";
+const char* TestLog       = "utest.log";
 const char* TestLogPrefix = "2015-07-15T14:53:51.979+0200 [I] 00001fdc ";
 #ifdef _WIN32
 const char* EOL = "\r\n";
@@ -48,9 +48,9 @@ void LogFileEquals(const char* expected)
 		ASSERT(false);
 	size_t len = (size_t) lseek(f, 0, SEEK_END);
 	lseek(f, 0, SEEK_SET);
-	char* buf = (char*) malloc(len + 1);
-	int nread = read(f, buf, (int) len);
-	buf[len] = 0;
+	char* buf         = (char*) malloc(len + 1);
+	int   nread       = read(f, buf, (int) len);
+	buf[len]          = 0;
 	size_t expect_len = strlen(expected);
 	if (len != expect_len || memcmp(expected, buf, len) != 0)
 	{
@@ -168,7 +168,7 @@ void TestFormattedWrite()
 {
 	printf("Formatted Write\n");
 	LogOpenCloser oc;
-	std::string expect;
+	std::string   expect;
 	for (int size = 0; size <= 1000; size++)
 	{
 		TestHelper::SetPrefix(oc.Log, TestLogPrefix);
@@ -186,24 +186,24 @@ void TestRingBuffer()
 	// We must write chunks that are larger than the buffer, so that we stress that code path.
 	// Bear in mind that we don't support writing log messages that are larger than our ring buffer, so we
 	// make no attempt to test that.
-	
+
 	static_assert(LoggerSlaveWriteBufferSize == 1024, "Alter ring sizes for test");
-	static const int nringSize = 2;
-	const size_t ringSizes[nringSize] = {512, 8192};
+	static const int nringSize            = 2;
+	const size_t     ringSizes[nringSize] = {512, 8192};
 
 	DeleteLogFile();
 
 	for (int iRing = 0; iRing < nringSize; iRing++)
 	{
 		// important that we have at least one write size (5297) that is greater than LoggerSlaveWriteBufferSize
-		const int nsizes = 8;
+		const int    nsizes        = 8;
 		const size_t sizes[nsizes] = {1, 2, 3, 59, 113, 307, 709, 5297};
 		ASSERT(sizes[nsizes - 1] < ringSizes[nringSize - 1]); // Our 'big' write size must be smaller than our 'big' ring buffer size.
 		uberlog::Logger log;
 		log.SetRingBufferSize(ringSizes[iRing]);
 		log.Open(TestLog);
 		std::string expect;
-		int isize = 0;
+		int         isize = 0;
 		for (int i = 0; i < 1000; i++)
 		{
 			auto msg = MakeMsg((int) sizes[isize], i);
@@ -228,11 +228,11 @@ void BenchThroughput()
 		int isize = 2;
 		//for (int isize = 0; isize < 4; isize++)
 		{
-			size_t mlen = msgSizes[isize];
+			size_t        mlen = msgSizes[isize];
 			LogOpenCloser oc(ringKB * 1024, 1000 * 1024 * 1024);
-			std::string msg = MakeMsg((int) mlen, 0);
-			auto start = std::chrono::system_clock::now();
-			size_t niter = 5 * 10 * 1000 * 1000 / mlen;
+			std::string   msg   = MakeMsg((int) mlen, 0);
+			auto          start = std::chrono::system_clock::now();
+			size_t        niter = 5 * 10 * 1000 * 1000 / mlen;
 			for (size_t i = 0; i < niter; i++)
 			{
 				oc.Log.LogRaw(msg.c_str(), msg.length());
@@ -253,7 +253,7 @@ void TestAll()
 }
 
 #ifdef _WIN32
-int AllocHook(int allocType, void *userData, size_t size, int blockType, long requestNumber, const unsigned char *filename, int lineNumber)
+int AllocHook(int allocType, void* userData, size_t size, int blockType, long requestNumber, const unsigned char* filename, int lineNumber)
 {
 	return TRUE;
 }

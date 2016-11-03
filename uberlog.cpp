@@ -539,7 +539,7 @@ void Logger::LogRaw(const void* data, size_t len)
 		OutOfBandWarning("Logger.LogRaw called but log is not open\n");
 		return;
 	}
-	
+
 	size_t maxLen = Ring.MaxAvailableForWrite() - sizeof(MessageHead);
 
 	if (len > maxLen)
@@ -547,7 +547,7 @@ void Logger::LogRaw(const void* data, size_t len)
 		OutOfBandWarning("Log message truncated from %lld to %lld\n", (long long) len, (long long) maxLen);
 		len = maxLen;
 	}
-	
+
 	NumLogMessagesSent++;
 	SendMessage(Command::LogMsg, data, len);
 	if (NumLogMessagesSent == 1)
