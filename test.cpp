@@ -2,19 +2,24 @@
 #define _CRT_SECURE_NO_WARNINGS 1
 #define NOMINMAX
 #include <windows.h>
+#include <io.h>
+#else
+#include <unistd.h>
+#include <sys/stat.h>
 #endif
 
 #include <algorithm>
 #include <chrono>
 #include <stdio.h>
-#include <io.h>
 #include <fcntl.h>
+#include <string.h>
 #include "uberlog.h"
 
 void Die(const char* file, int line, const char* msg)
 {
 	printf("Assertion Failed\n%s:%d %s\n", file, line, msg);
-	__debugbreak();
+	//__debugbreak();
+	//__builtin_trap();
 	exit(1);
 }
 
@@ -246,8 +251,8 @@ void BenchThroughput()
 
 void TestAll()
 {
-	BenchThroughput();
-	TestProcessLifecycle();
+	//BenchThroughput();
+	//TestProcessLifecycle();
 	TestFormattedWrite();
 	TestRingBuffer();
 }

@@ -12,8 +12,10 @@ into the log file.
 
 #ifdef __linux__
 #include <sys/types.h>
+#include <sys/fcntl.h>
 #include <unistd.h>
 #include <glob.h>
+#include <time.h>
 #endif
 
 #include <string>
@@ -136,16 +138,16 @@ private:
 	{
 		// build time representation (UTC)
 		char timeBuf[100];
-		tm   time;
+		tm   timev;
 #ifdef _WIN32
 		__time64_t t;
 		_time64(&t);
-		_gmtime64_s(&time, &t);
+		_gmtime64_s(&timev, &t);
 #else
 		time_t t = time(nullptr);
-		gmtime_r(t, &time)
+		gmtime_r(&t, &timev);
 #endif
-		strftime(timeBuf, sizeof(timeBuf), "-%Y-%m-%dT%H-%M-%SZ", &time);
+		strftime(timeBuf, sizeof(timeBuf), "-%Y-%m-%dT%H-%M-%SZ", &timev);
 
 		// build the archive filename
 		std::string ext     = FilenameExtension();
@@ -227,9 +229,9 @@ class LoggerSlave
 public:
 	static const size_t WriteBufSize        = LoggerSlaveWriteBufferSize;
 	bool                EnableDebugMessages = false;
-	std::atomic<bool>   IsParentDead        = false;
 	uint32_t            ParentPID           = 0;
 	uint32_t            RingSize            = 0;
+	std::atomic<bool>   IsParentDead;
 	RingBuffer          Ring;
 	shm_handle_t        ShmHandle = internal::NullShmHandle;
 	std::thread         WatcherThread;
@@ -246,6 +248,11 @@ public:
 #else
 	bool CloseMessageFlag = false;
 #endif
+
+	LoggerSlave()
+	{
+		IsParentDead = false;
+	}
 
 	void Run()
 	{

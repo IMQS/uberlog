@@ -1,0 +1,46 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "0.1.0",
+    "command": "clang++",
+    "isShellCommand": true,
+    "args": ["-std=c++11", "-ggdb"],
+    "showOutput": "always",
+    "tasks": [
+        {
+            "isBuildCommand": true,
+            "taskName": "buildTest",
+            "args": ["-o", "test", "test.cpp", "tsf.cpp", "uberlog.cpp", "-lrt"],
+            "suppressTaskName": true,
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": ["relative", "${workspaceRoot}"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            }
+        },
+        {
+            "taskName": "buildUberlogger",
+            "args": ["-o", "uberlogger", "uberlogger.cpp", "uberlog.cpp", "tsf.cpp", "-lrt"],
+            "suppressTaskName": true,
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": ["relative", "${workspaceRoot}"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            }
+        }
+    ]
+}

@@ -4,6 +4,8 @@
 
 #include "tsf.h"
 #include <assert.h>
+#include <string.h>
+#include <stdint.h>
 
 namespace tsf {
 

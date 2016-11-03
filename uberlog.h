@@ -25,11 +25,13 @@ static const shm_handle_t NullShmHandle = NULL;
 static const bool         UseCRLF       = true;
 #else
 static const char         PATH_SLASH = '/';
-typedef void*             TProcessHandle;
+typedef void*             proc_handle_t;
 typedef int               shm_handle_t;
-typedef pid_t             TProcessID;
+typedef pid_t             proc_id_t;
 static const shm_handle_t NullShmHandle = -1;
 static const bool         UseCRLF       = false;
+#define _In_z_
+#define _Printf_format_string_
 #endif
 
 class TestHelper;
@@ -41,7 +43,7 @@ proc_id_t   GetMyTID();
 std::string GetMyExePath();
 void        SleepMS(uint32_t ms);
 void        SharedMemObjectName(proc_id_t parentID, const char* logFilename, char shmName[100]);
-bool        SetupSharedMemory(proc_id_t parentID, const char* logFileName, size_t size, bool create, shm_handle_t& shmHandle, void*& shmBuf);
+bool        SetupSharedMemory(proc_id_t parentID, const char* logFilename, size_t size, bool create, shm_handle_t& shmHandle, void*& shmBuf);
 void        CloseSharedMemory(shm_handle_t shmHandle, void* buf, size_t size);
 size_t      SharedMemSizeFromRingSize(size_t ringBufferSize);
 void        OutOfBandWarning(_In_z_ _Printf_format_string_ const char* msg, ...);

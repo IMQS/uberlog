@@ -6,12 +6,18 @@
 #else
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <sys/syscall.h>
+#include <linux/unistd.h>
 #include <fcntl.h>
+#include <unistd.h>
 #endif
 
 #include <algorithm>
 #include <chrono>
 #include <assert.h>
+#include <string.h>
 #include <stdint.h>
 #include <sys/timeb.h>
 
@@ -79,10 +85,10 @@ void SleepMS(uint32_t ms)
 {
 	Sleep((DWORD) ms);
 }
-bool SetupSharedMemory(proc_id_t parentID, const char* logFileName, size_t size, bool create, shm_handle_t& shmHandle, void*& shmBuf)
+bool SetupSharedMemory(proc_id_t parentID, const char* logFilename, size_t size, bool create, shm_handle_t& shmHandle, void*& shmBuf)
 {
 	char shmName[100];
-	SharedMemObjectName(parentID, logFileName, shmName);
+	SharedMemObjectName(parentID, logFilename, shmName);
 	if (create)
 		shmHandle = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, (DWORD)(size >> 32), (DWORD) size, shmName);
 	else
@@ -108,9 +114,14 @@ void CloseSharedMemory(shm_handle_t shmHandle, void* buf, size_t size)
 	UnmapViewOfFile(buf);
 	CloseHandle(shmHandle);
 }
+void Panic(const char* msg)
+{
+	fprintf(stdout, "uberlog panic: %s\n", msg);
+	//fprintf(stderr, "uberlog panic: %s\n", msg);
+	*((int*) 0) = 1;
+}
 #else
-const char PATH_SLASH = '/';
-bool       ProcessCreate(const char* cmd, const char* args, proc_handle_t& handle, proc_id_t& pid)
+bool ProcessCreate(const char* cmd, const char* args, proc_handle_t& handle, proc_id_t& pid)
 {
 	return false;
 }
@@ -120,6 +131,7 @@ bool WaitForProcessToDie(proc_handle_t handle, proc_id_t pid, uint32_t milliseco
 	auto start = std::chrono::system_clock::now();
 	for (;;)
 	{
+		int status = 0;
 		int r = waitpid(pid, &status, WNOHANG | WUNTRACED);
 		if (r == pid)
 			return true;
@@ -135,7 +147,7 @@ proc_id_t GetMyPID()
 }
 proc_id_t GetMyTID()
 {
-	return gettid();
+	return syscall(__NR_gettid);
 }
 std::string GetMyExePath()
 {
@@ -159,18 +171,32 @@ void SleepMS(uint32_t ms)
 	t.tv_sec  = (nanoseconds - t.tv_nsec) / 1000000000;
 	nanosleep(&t, nullptr);
 }
-bool SetupSharedMemory(proc_id_t parentID, const char* logFileName, size_t size, bool create, shm_handle_t& shmHandle, void*& shmBuf)
+bool SetupSharedMemory(proc_id_t parentID, const char* logFilename, size_t size, bool create, shm_handle_t& shmHandle, void*& shmBuf)
 {
 	char shmName[100];
 	SharedMemObjectName(parentID, logFilename, shmName);
-	shmHandle = shm_open(shmName, create ? O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
+	if (create)
+		shmHandle = shm_open(shmName, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
+	else
+		shmHandle = shm_open(shmName, O_RDWR, 0);
+
 	if (shmHandle == -1)
 	{
 		OutOfBandWarning("uberlog: shm_open failed: %d\n", errno);
 		return false;
 	}
+	if (create)
+	{
+		if (ftruncate(shmHandle, size) != 0)
+		{
+			OutOfBandWarning("uberlog: ftruncate on shm failed: %d\n", errno);
+			close(shmHandle);
+			shmHandle = -1;
+			return false;
+		}
+	}
 	shmBuf = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, shmHandle, 0);
-	if (!shmBuf)
+	if (shmBuf == (void*) -1)
 	{
 		OutOfBandWarning("uberlog: mmap failed: %d\n", errno);
 		close(shmHandle);
@@ -183,6 +209,12 @@ void CloseSharedMemory(shm_handle_t shmHandle, void* buf, size_t size)
 {
 	munmap(buf, size);
 	close(shmHandle);
+}
+__attribute__((noreturn)) void Panic(const char* msg)
+{
+	fprintf(stdout, "uberlog panic: %s\n", msg);
+	//fprintf(stderr, "uberlog panic: %s\n", msg);
+	__builtin_trap();
 }
 #endif
 
@@ -222,13 +254,6 @@ void OutOfBandWarning(_In_z_ _Printf_format_string_ const char* msg, ...)
 	//va_start(va, msg);
 	//vfprintf(stderr, msg, va);
 	//va_end(va);
-}
-
-void Panic(const char* msg)
-{
-	fprintf(stdout, "uberlog panic: %s\n", msg);
-	//fprintf(stderr, "uberlog panic: %s\n", msg);
-	*((int*) 0) = 1;
 }
 
 std::string FullPath(const char* relpath)
@@ -684,7 +709,11 @@ void Logger::LogDefaultFormat_Phase2(uberlog::Level level, tsf::StrLenPair msg, 
 		ftime(&t1);
 		t1.time -= t1.timezone * 60;
 		tm t2;
+#ifdef _WIN32
 		gmtime_s(&t2, &t1.time);
+#else
+		gmtime_r(&t1.time, &t2);
+#endif
 		strftime(buf, 32, "%Y-%m-%dT%H:%M:%S.000+0000", &t2);
 		int tzhour = abs(t1.timezone) / 60;
 		int tzmin  = abs(t1.timezone) % 60;
