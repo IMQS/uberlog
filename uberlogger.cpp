@@ -272,6 +272,7 @@ public:
 		Log.Open();
 
 		uint32_t sleepMS = 0;
+		uint64_t totalSleepMS = 0;
 
 		while (!IsParentDead && !HasReceivedCloseMessage())
 		{
@@ -293,12 +294,15 @@ public:
 				sleepMS = WaitForOpenSleepMS;
 
 			PollForParentProcessDeath(); // Not used on Windows
+			totalSleepMS += sleepMS;
 			internal::SleepMS(sleepMS);
 		}
 
 		// Drain the buffer
 		if (IsParentDead && Ring.Buf)
 			ReadMessages();
+
+		//tsf::printfmt("Logger slave slept for a total of %v MS\n", totalSleepMS);
 
 		CloseRingBuffer();
 		Log.Close();
