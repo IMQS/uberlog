@@ -7,3 +7,5 @@ msvc/test/test.log
 *.VC.db
 *.user
 *.opendb
+test
+uberlogger

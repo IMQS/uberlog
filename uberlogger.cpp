@@ -300,6 +300,7 @@ public:
 		if (IsParentDead && Ring.Buf)
 			ReadMessages();
 
+		CloseRingBuffer();
 		Log.Close();
 
 		if (HasReceivedCloseMessage())

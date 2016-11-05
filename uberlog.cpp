@@ -38,7 +38,7 @@ namespace internal {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #ifdef _WIN32
-bool ProcessCreate(const char* cmd, const char* args, proc_handle_t& handle, proc_id_t& pid)
+bool ProcessCreate(const char* cmd, const char** argv, proc_handle_t& handle, proc_id_t& pid)
 {
 	STARTUPINFO         si;
 	PROCESS_INFORMATION pi;
@@ -46,9 +46,13 @@ bool ProcessCreate(const char* cmd, const char* args, proc_handle_t& handle, pro
 	memset(&pi, 0, sizeof(pi));
 	si.cb = sizeof(si);
 	std::string buf;
-	buf += cmd;
-	buf += " ";
-	buf += args;
+	for (size_t i = 0; argv[i]; i++)
+	{
+		buf += "\"";
+		buf += argv[i];
+		buf += "\"";
+		buf += " ";
+	}
 	DWORD flags = 0;
 	//flags |= CREATE_SUSPENDED; // Useful for debugging
 	//flags |= CREATE_NEW_CONSOLE; // Useful for debugging
@@ -114,6 +118,10 @@ void CloseSharedMemory(shm_handle_t shmHandle, void* buf, size_t size)
 	UnmapViewOfFile(buf);
 	CloseHandle(shmHandle);
 }
+void DeleteSharedMemory(proc_id_t parentID, const char* logFilename)
+{
+	// not necessary on Windows
+}
 void Panic(const char* msg)
 {
 	fprintf(stdout, "uberlog panic: %s\n", msg);
@@ -121,9 +129,25 @@ void Panic(const char* msg)
 	*((int*) 0) = 1;
 }
 #else
-bool ProcessCreate(const char* cmd, const char* args, proc_handle_t& handle, proc_id_t& pid)
+bool ProcessCreate(const char* cmd, const char** argv, proc_handle_t& handle, proc_id_t& pid)
 {
-	return false;
+	pid_t childid = vfork();
+	if (childid == -1)
+		return false;
+	if (childid != 0)
+	{
+		// parent
+		pid = childid;
+		return true;
+	}
+	else
+	{
+		// child
+		execv(cmd, (char *const *) argv);
+		// Since we're using vfork, the only thing we're allowed to do now is call  __exit
+		_exit(1);
+		return false; // unreachable
+	}
 }
 bool WaitForProcessToDie(proc_handle_t handle, proc_id_t pid, uint32_t milliseconds)
 {
@@ -182,7 +206,7 @@ bool SetupSharedMemory(proc_id_t parentID, const char* logFilename, size_t size,
 
 	if (shmHandle == -1)
 	{
-		OutOfBandWarning("uberlog: shm_open failed: %d\n", errno);
+		OutOfBandWarning("uberlog: shm_open(%s) failed: %d\n", create ? "create" : "open", errno);
 		return false;
 	}
 	if (create)
@@ -209,6 +233,12 @@ void CloseSharedMemory(shm_handle_t shmHandle, void* buf, size_t size)
 {
 	munmap(buf, size);
 	close(shmHandle);
+}
+void DeleteSharedMemory(proc_id_t parentID, const char* logFilename)
+{
+	char shmName[100];
+	SharedMemObjectName(parentID, logFilename, shmName);
+	shm_unlink(shmName);
 }
 __attribute__((noreturn)) void Panic(const char* msg)
 {
@@ -608,9 +638,22 @@ bool Logger::Open()
 	if (lastSlash != std::string::npos)
 		uberLoggerPath = myPath.substr(0, lastSlash + 1) + "uberlogger";
 
-	char args[4096];
-	sprintf(args, "%u %u %s %lld %d", GetMyPID(), (uint32_t) RingBufferSize, Filename.c_str(), (long long) MaxFileSize, MaxNumArchives);
-	if (!ProcessCreate(uberLoggerPath.c_str(), args, HChildProcess, ChildPID))
+	//char args[4096];
+	//sprintf(args, "%u %u %s %lld %d", GetMyPID(), (uint32_t) RingBufferSize, Filename.c_str(), (long long) MaxFileSize, MaxNumArchives);
+	const int nArgs = 6;
+	std::string args[nArgs];
+	const char* argv[nArgs + 1];
+	args[0] = uberLoggerPath;
+	args[1] = tsf::fmt("%u", GetMyPID());
+	args[2] = tsf::fmt("%u", RingBufferSize);
+	args[3] = Filename;
+	args[4] = tsf::fmt("%d", MaxFileSize);
+	args[5] = tsf::fmt("%d", MaxNumArchives);
+	for (size_t i = 0; i < nArgs; i++)
+		argv[i] = args[i].c_str();
+	argv[nArgs] = nullptr;
+
+	if (!ProcessCreate(uberLoggerPath.c_str(), argv, HChildProcess, ChildPID))
 	{
 		CloseRingBuffer();
 		return false;
@@ -658,7 +701,10 @@ bool Logger::CreateRingBuffer()
 void Logger::CloseRingBuffer()
 {
 	if (Ring.Buf)
+	{
 		CloseSharedMemory(ShmHandle, Ring.Buf, SharedMemSizeFromRingSize(Ring.Size));
+		DeleteSharedMemory(GetMyPID(), Filename.c_str());
+	}
 	Ring.Buf  = nullptr;
 	Ring.Size = 0;
 	ShmHandle = internal::NullShmHandle;

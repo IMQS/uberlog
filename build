@@ -1,0 +1,5 @@
+#!/bin/sh
+
+clang++ -O2 -o test -ggdb -std=c++11 test.cpp tsf.cpp uberlog.cpp -lrt
+clang++ -O2 -o uberlogger -ggdb -std=c++11 uberlogger.cpp tsf.cpp uberlog.cpp -lrt
+

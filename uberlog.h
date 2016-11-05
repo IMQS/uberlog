@@ -36,7 +36,7 @@ static const bool         UseCRLF       = false;
 
 class TestHelper;
 
-bool        ProcessCreate(const char* cmd, const char* args, proc_handle_t& handle, proc_id_t& pid);
+bool        ProcessCreate(const char* cmd, const char** argv, proc_handle_t& handle, proc_id_t& pid);
 bool        WaitForProcessToDie(proc_handle_t handle, proc_id_t pid, uint32_t milliseconds);
 proc_id_t   GetMyPID();
 proc_id_t   GetMyTID();

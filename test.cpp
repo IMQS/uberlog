@@ -251,8 +251,8 @@ void BenchThroughput()
 
 void TestAll()
 {
-	//BenchThroughput();
-	//TestProcessLifecycle();
+	BenchThroughput();
+	TestProcessLifecycle();
 	TestFormattedWrite();
 	TestRingBuffer();
 }
