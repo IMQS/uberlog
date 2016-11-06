@@ -239,7 +239,7 @@ public:
 	int64_t             MaxLogSize         = 30 * 1024 * 1024;
 	int32_t             MaxNumArchives     = 3;
 	uint32_t            MaxSleepMS         = 1024;
-	uint32_t            WaitForOpenSleepMS = 256; // Our sleep periods when we're waiting for the ring buffer to be opened
+	uint32_t            WaitForOpenSleepMS = 1; // Our sleep periods when we're waiting for the ring buffer to be opened
 	LogFile             Log;
 	char*               WriteBuf = nullptr;
 

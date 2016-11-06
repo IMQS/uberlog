@@ -249,6 +249,39 @@ void BenchThroughput()
 	}
 }
 
+double AccurateTimeSeconds()
+{
+#ifdef _MSC_VER
+	LARGE_INTEGER c, f;
+	QueryPerformanceCounter(&c);
+	QueryPerformanceFrequency(&f);
+	return (double) c.QuadPart / (double) f.QuadPart;
+#else
+	struct timespec tp;
+	clock_gettime(CLOCK_MONOTONIC, &tp);
+	return (double) tp.tv_sec * 1000000000.0 + (double) tp.tv_nsec;
+#endif
+}
+
+void BenchLatency()
+{
+	// Make the ring buffer size large enough that we never stall. We want to measure minimum latency here.
+	LogOpenCloser oc(32768 * 1024, 500 * 1024 * 1024);
+	
+	size_t warmup = 100;
+	size_t count = 50000;
+
+	double start = 0;
+	for (size_t i = 0; i < warmup + count; i++)
+	{
+		if (i == warmup)
+			start = AccurateTimeSeconds();
+		oc.Log.Info("A typical log message, of a typical length, with %v or %v arguments", "two", "three");
+	}
+	double end = AccurateTimeSeconds();
+	tsf::printfmt("ns per message: %v\n", 1000000000 * (end - start) / count);
+}
+
 void HelloWorld()
 {
 	uberlog::Logger l;
@@ -258,6 +291,7 @@ void HelloWorld()
 
 void TestAll()
 {
+	BenchLatency();
 	BenchThroughput();
 	TestProcessLifecycle();
 	TestFormattedWrite();

@@ -677,8 +677,14 @@ void Logger::SendMessage(internal::Command cmd, const void* payload, size_t payl
 	// If there's not enough space in the ring buffer, then wait for slave to consume messages
 	for (int64_t i = 0; sizeof(msg) + payload_len > Ring.AvailableForWrite(); i++)
 	{
-		SleepMS(i < 2 ? 0 : 5);
-		if (i == 100)
+		if (i < 1000)
+			SleepMS(0);
+		else if (i < 2000)
+			SleepMS(1);
+		else
+			SleepMS(5);
+
+		if (i == 2001)
 			OutOfBandWarning("Waiting for log writer slave to flush queue");
 	}
 

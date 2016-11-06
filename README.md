@@ -8,12 +8,13 @@ uberlog is a cross platform C++ logging system that is:
 4. Supported on Linux and Windows
 
 ## Small
-Two headers, and three source files. Only 2071 lines of code, excluding tests.
+Two headers, and three source files. Only 2085 lines of code, excluding tests.
 
 ## Fast
 Logs are written to a shared memory ring buffer. Your program only stalls if the
 queue is full, which only happens when the writer cannot keep up with the
-amount of log messages.
+amount of log messages. Under such circumstances, you generally have worse
+problems (ie unsustainable system load).
 
 ## Robust
 A child process is spawned, which takes care of writing the log messages to a file.
@@ -62,14 +63,14 @@ Scroll down to see the numbers for Linux, which are much higher.
 
 |RingKB| MsgLen |   KB/s | Msg/s  |
 |------|--------|--------|--------|
-    64 |    200 |  10746 |   55018
-   128 |    200 |  21463 |  109890
-   256 |    200 |  42719 |  218723
-   512 |    200 |  83610 |  428082
-  1024 |    200 | 147073 |  753012
-  2048 |    200 | 290644 | 1488095
-  4096 |    200 | 325521 | 1666667
-  8192 |    200 | 356410 | 1824818
+    64 |    200 |  53074 |  271739
+   128 |    200 |  73206 |  374813
+   256 |    200 | 128158 |  656168
+   512 |    200 | 228169 | 1168224
+  1024 |    200 | 353827 | 1811594
+  2048 |    200 | 381470 | 1953125
+  4096 |    200 | 403538 | 2066116
+  8192 |    200 | 432107 | 2212389  
 
 RingKB is the size of the ring buffer in kilobytes.  
 MsgLen is the length of each log message.  
@@ -79,9 +80,9 @@ Msg/s is the throughput in terms of number of messages written to the log file.
 uberlog is designed to be a regular human readable logging system, which implies
 a certain frequency of messages. If we say that messages are on average 200 bytes
 long, and we pick a ring buffer size of 1024 KB, then we see from the above table
-that we can sustain about 750,000 messages per second. Such a high volume of log
+that we can sustain about 1.8 million messages per second. Such a high volume of log
 messages would quickly saturate typical log indexing systems, or third party
-logging aggregators, so we're at 700k msg/s, we're far into the "good enough"
+logging aggregators, so at 1.8M msg/s, we're far into the "good enough"
 performance territory.  
 What's perhaps more pertinent is the burst rate. When the log slave writer sees
 no incoming messages, it gradually raises it's sleep time, from 1 ms, up to 1000 ms.
@@ -102,7 +103,12 @@ measuring for any reasonable length of time causes the disk write to become the
 bottleneck (ie disk buffer cache gets full).
 
 As far as I can tell, the difference in performance between Linux and Windows
-is due to the speed of the disk write() call.
+is due mostly to differences in thread scheduling, as well as granularity of
+sleep() times. If I force all sleep times to be 0, then the Windows numbers
+become very similar to the Linux numbers. The log slave enters increasingly long
+sleep periods, up to a maximum of 1 second, if there is no logging activity.
+We could probably reduce such pauses completely, with waitable IPC events, but
+it doesn't seem worth the extra complexity.
 
 |RingKB| MsgLen |   KB/s | Msg/s  |
 |------|--------|--------|--------|
