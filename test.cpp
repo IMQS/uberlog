@@ -28,6 +28,7 @@ void Die(const char* file, int line, const char* msg)
 #define close _close
 #define read _read
 #define lseek _lseek
+#define write _write
 #else
 #define O_BINARY 0
 #endif
@@ -292,6 +293,38 @@ void BenchLatency()
 	}
 }
 
+void BenchWriteLatency()
+{
+#ifdef _WIN32
+	HANDLE fd = CreateFileA("test", GENERIC_READ | GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+#else
+	int fd = open("test", O_BINARY | O_TRUNC | O_CREAT | O_RDWR, _S_IREAD | _S_IWRITE);
+#endif
+
+	size_t warmup = 100;
+	size_t count = 200000;
+
+	double start = 0;
+	for (size_t i = 0; i < warmup + count; i++)
+	{
+		if (i == warmup)
+			start = AccurateTimeSeconds();
+#ifdef _WIN32
+		WriteFile(fd, "hello", 5, NULL, NULL);
+#else
+		write(fd, "hello", 5);
+#endif
+	}
+	double end = AccurateTimeSeconds();
+	tsf::printfmt("ns per write: %v\n", 1000000000 * (end - start) / count);
+
+#ifdef _WIN32
+	CloseHandle(fd);
+#else
+	close(fd);
+#endif
+}
+
 void HelloWorld()
 {
 	uberlog::Logger l;
@@ -301,11 +334,12 @@ void HelloWorld()
 
 void TestAll()
 {
-	BenchLatency();
-	BenchThroughput();
-	TestProcessLifecycle();
-	TestFormattedWrite();
-	TestRingBuffer();
+	BenchWriteLatency();
+	//BenchLatency();
+	//BenchThroughput();
+	//TestProcessLifecycle();
+	//TestFormattedWrite();
+	//TestRingBuffer();
 }
 
 #ifdef _WIN32
