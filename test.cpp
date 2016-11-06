@@ -249,6 +249,13 @@ void BenchThroughput()
 	}
 }
 
+void HelloWorld()
+{
+	uberlog::Logger l;
+	l.Open("hello.log");
+	l.Info("Hello!");	
+}
+
 void TestAll()
 {
 	BenchThroughput();

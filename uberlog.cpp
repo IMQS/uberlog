@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <sys/syscall.h>
 #include <linux/unistd.h>
+#include <time.h>
 #include <fcntl.h>
 #include <unistd.h>
 #endif
@@ -673,7 +674,7 @@ void Logger::SendMessage(internal::Command cmd, const void* payload, size_t payl
 	if (sizeof(msg) + payload_len > Ring.MaxAvailableForWrite())
 		Panic("Attempt to write too much data to the ring buffer");
 
-	// Wait for slave to consume ring buffer
+	// If there's not enough space in the ring buffer, then wait for slave to consume messages
 	for (int64_t i = 0; sizeof(msg) + payload_len > Ring.AvailableForWrite(); i++)
 	{
 		SleepMS(i < 2 ? 0 : 5);
@@ -751,22 +752,29 @@ void Logger::LogDefaultFormat_Phase2(uberlog::Level level, tsf::StrLenPair msg, 
 	}
 	else
 	{
+		tm t2;
+		uint32_t milliseconds;
+		int32_t timezone_minutes;
+#ifdef _WIN32
 		timeb t1;
 		ftime(&t1);
-		t1.time -= t1.timezone * 60;
-		tm t2;
-#ifdef _WIN32
+		timezone_minutes = t1.timezone;
+		t1.time -= timezone_minutes * 60;
 		gmtime_s(&t2, &t1.time);
+		milliseconds = (uint32_t) t1.millitm;
 #else
-		gmtime_r(&t1.time, &t2);
+		tzset();
+		timezone_minutes = timezone / 60; // The global libc variable 'timezone' is set by tzset(), and is seconds west of UTC.
+		struct timespec tp;
+		clock_gettime(CLOCK_REALTIME, &tp);
+		tp.tv_sec -= timezone_minutes * 60;
+		gmtime_r(&tp.tv_sec, &t2);
+		milliseconds = (uint32_t) (tp.tv_nsec / 1000000);
 #endif
 		strftime(buf, 32, "%Y-%m-%dT%H:%M:%S.000+0000", &t2);
-		int tzhour = abs(t1.timezone) / 60;
-		int tzmin  = abs(t1.timezone) % 60;
-		if (t1.timezone < 0)
-			snprintf(buf + 20, bufsize - 20, "%03d+%02d%02d", t1.millitm, tzhour, tzmin);
-		else
-			snprintf(buf + 20, bufsize - 20, "%03d-%02d%02d", t1.millitm, tzhour, tzmin);
+		uint32_t tzhour = abs(timezone_minutes) / 60;
+		uint32_t tzmin  = abs(timezone_minutes) % 60;
+		snprintf(buf + 20, bufsize - 20, "%03u%c%02u%02u", milliseconds, timezone_minutes <= 0 ? '+' : '-', tzhour, tzmin);
 		snprintf(buf + 28, bufsize - 28, " [%c] %08x", LevelChar(level), (unsigned int) uberlog::internal::GetMyTID());
 	}
 	buf[41] = ' ';
