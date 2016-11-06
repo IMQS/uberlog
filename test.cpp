@@ -259,27 +259,37 @@ double AccurateTimeSeconds()
 #else
 	struct timespec tp;
 	clock_gettime(CLOCK_MONOTONIC, &tp);
-	return (double) tp.tv_sec * 1000000000.0 + (double) tp.tv_nsec;
+	return (double) tp.tv_sec + (double) tp.tv_nsec / 1000000000.0;
 #endif
 }
 
 void BenchLatency()
 {
-	// Make the ring buffer size large enough that we never stall. We want to measure minimum latency here.
-	LogOpenCloser oc(32768 * 1024, 500 * 1024 * 1024);
-	
-	size_t warmup = 100;
-	size_t count = 50000;
-
-	double start = 0;
-	for (size_t i = 0; i < warmup + count; i++)
+	for (int mode = 0; mode < 2; mode++)
 	{
-		if (i == warmup)
-			start = AccurateTimeSeconds();
-		oc.Log.Info("A typical log message, of a typical length, with %v or %v arguments", "two", "three");
+		// Make the ring buffer size large enough that we never stall. We want to measure minimum latency here.
+		LogOpenCloser oc(32768 * 1024, 500 * 1024 * 1024);
+
+		size_t warmup = 100;
+		size_t count = 50000;
+
+		std::string staticMsg = "This is a message of a similar length, but it is a static string, so no formatting or time";
+
+		double start = 0;
+		for (size_t i = 0; i < warmup + count; i++)
+		{
+			if (i == warmup)
+				start = AccurateTimeSeconds();
+
+			if (mode == 0)
+				oc.Log.Info("A typical log message, of a typical length, with %v or %v arguments", "two", "three");
+			else if (mode == 1)
+				oc.Log.LogRaw(staticMsg.c_str(), staticMsg.length());
+		}
+		double end = AccurateTimeSeconds();
+		const char* zmode = mode == 0 ? "formatted" : "raw";
+		tsf::printfmt("ns per message (%s): %v\n", zmode, 1000000000 * (end - start) / count);
 	}
-	double end = AccurateTimeSeconds();
-	tsf::printfmt("ns per message: %v\n", 1000000000 * (end - start) / count);
 }
 
 void HelloWorld()
