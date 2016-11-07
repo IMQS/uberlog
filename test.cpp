@@ -296,9 +296,9 @@ void BenchLatency()
 void BenchWriteLatency()
 {
 #ifdef _WIN32
-	HANDLE fd = CreateFileA("test", GENERIC_READ | GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+	HANDLE fd = CreateFileA("xyz", GENERIC_READ | GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
 #else
-	int fd = open("test", O_BINARY | O_TRUNC | O_CREAT | O_RDWR, _S_IREAD | _S_IWRITE);
+	int fd = open("xyz", O_BINARY | O_TRUNC | O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
 #endif
 
 	size_t warmup = 100;
