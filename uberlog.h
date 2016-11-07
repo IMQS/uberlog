@@ -85,6 +85,33 @@ public:
 	size_t MaxAvailableForWrite() const { return Size - 1; } // The amount of data you can transmit atomically, when the buffer is empty
 };
 
+// The TimeKeeper's job is to speed up the creation of textual time stamps (eg. 2015-07-15T14:53:51.979+0200)
+// We do this by keeping a local epoch, which has two variables:
+// 1. The system time of the start of the current day
+// 2. The system time when we last reset our local epoch.
+// We recreate our local epoch every 60 seconds.
+class TimeKeeper
+{
+public:
+	TimeKeeper();
+
+	void Format(char* buf);
+	static void    FormatUintDecimal(uint32_t ndigit, char* buf, uint32_t v);
+	static void    FormatUintHex(uint32_t ndigit, char* buf, uint32_t v);
+
+private:
+	int      TimezoneMinutes      = 0; // Minutes west of UTC
+	uint64_t LocalSeconds         = 0;
+	uint32_t LocalNano            = 0;
+	uint64_t LocalDayStartSeconds = 0;
+	char     DateStr[11];     // 2015-01-01
+	char     TimeZoneStr[6];  // +0200
+
+	void    NewLocalEpoch();
+	int64_t NanoSinceDayStart();
+	void    UnixTimeNow(uint64_t& seconds, uint32_t& nano);
+};
+
 // A command sent over the ring buffer
 enum class Command : uint32_t
 {
@@ -219,6 +246,7 @@ private:
 	const int                   EolLen                    = uberlog::internal::UseCRLF ? 2 : 1;
 	bool                        IsOpen                    = false;
 	std::atomic<uberlog::Level> Level;
+	internal::TimeKeeper        TK;
 	internal::RingBuffer        Ring;
 	internal::proc_handle_t     HChildProcess = nullptr; // not used on linux
 	internal::proc_id_t         ChildPID      = -1;

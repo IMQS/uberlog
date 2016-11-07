@@ -9,6 +9,8 @@
 #endif
 
 #include <algorithm>
+#include <functional>
+#include <vector>
 #include <chrono>
 #include <stdio.h>
 #include <fcntl.h>
@@ -225,6 +227,49 @@ void TestRingBuffer()
 	}
 }
 
+struct Stats
+{
+	double Mean = 0;
+	double StdDev = 0;
+	double CV = 0;			// https://en.wikipedia.org/wiki/Coefficient_of_variation
+
+	static Stats Compute(const std::vector<double>& samples)
+	{
+		double mean = 0;
+		for (auto s : samples)
+			mean += s;
+		mean /= (double) samples.size();
+		
+		double var = 0;
+		for (auto s : samples)
+			var += (s - mean) * (s - mean);
+		var /= (double) samples.size() - 1;
+		Stats st;
+		st.Mean = mean;
+		st.StdDev = sqrt(var);
+		st.CV = st.StdDev / st.Mean;
+		return st;
+	}
+};
+
+void Bench(const char* title, const char* unit, std::function<double()> func)
+{
+	std::vector<double> samples;
+	for (int i = 0; i < 100; i++)
+	{
+		samples.push_back(func());
+		if (i >= 10)
+		{
+			auto stats = Stats::Compute(samples);
+			if (stats.CV < 0.05)
+				break;
+		}
+	}
+	auto stats = Stats::Compute(samples);
+
+	printf("%-20s %.2f %s (+- %.2f)\n", title, stats.Mean, unit, stats.StdDev);
+}
+
 void BenchThroughput()
 {
 	printf("RingKB MsgLen   KB/s   Msg/s\n");
@@ -264,33 +309,40 @@ double AccurateTimeSeconds()
 #endif
 }
 
-void BenchLatency()
+enum Modes
 {
-	for (int mode = 0; mode < 2; mode++)
+	ModeRaw,
+	ModeParamFmt,
+	ModeSimpleFmt,
+};
+
+double BenchLoggerLatency(Modes mode)
+{
+	// Make the ring buffer size large enough that we never stall. We want to measure minimum latency here.
+	LogOpenCloser oc(32768 * 1024, 500 * 1024 * 1024);
+
+	size_t warmup = 100;
+	size_t count = 50000;
+
+	std::string staticMsg = "This is a message of a similar length, but it is a static string, so no formatting or time";
+
+	double start = 0;
+	for (size_t i = 0; i < warmup + count; i++)
 	{
-		// Make the ring buffer size large enough that we never stall. We want to measure minimum latency here.
-		LogOpenCloser oc(32768 * 1024, 500 * 1024 * 1024);
+		if (i == warmup)
+			start = AccurateTimeSeconds();
 
-		size_t warmup = 100;
-		size_t count = 50000;
-
-		std::string staticMsg = "This is a message of a similar length, but it is a static string, so no formatting or time";
-
-		double start = 0;
-		for (size_t i = 0; i < warmup + count; i++)
-		{
-			if (i == warmup)
-				start = AccurateTimeSeconds();
-
-			if (mode == 0)
-				oc.Log.Info("A typical log message, of a typical length, with %v or %v arguments", "two", "three");
-			else if (mode == 1)
-				oc.Log.LogRaw(staticMsg.c_str(), staticMsg.length());
-		}
-		double end = AccurateTimeSeconds();
-		const char* zmode = mode == 0 ? "formatted" : "raw";
-		tsf::printfmt("ns per message (%s): %v\n", zmode, 1000000000 * (end - start) / count);
+		if (mode == ModeRaw)
+			oc.Log.LogRaw(staticMsg.c_str(), staticMsg.length());
+		else if (mode == ModeParamFmt)
+			oc.Log.Info("A typical log message, of a typical length, with %v or %v arguments", "two", "three");
+		else
+			oc.Log.Info("A typical log message, of a typical length, without any arguments");
 	}
+	double end = AccurateTimeSeconds();
+	return 1000000000.0 * (end - start) / count;
+	//const char* zmode = mode == 0 ? "formatted" : "raw";
+	//tsf::printfmt("ns per message (%s): %v\n", zmode, 1000000000 * (end - start) / count);
 }
 
 void BenchWriteLatency()
@@ -316,7 +368,7 @@ void BenchWriteLatency()
 #endif
 	}
 	double end = AccurateTimeSeconds();
-	tsf::printfmt("ns per write: %v\n", 1000000000 * (end - start) / count);
+	tsf::printfmt("ns per disk write: %v\n", 1000000000 * (end - start) / count);
 
 #ifdef _WIN32
 	CloseHandle(fd);
@@ -334,9 +386,11 @@ void HelloWorld()
 
 void TestAll()
 {
-	BenchWriteLatency();
-	//BenchLatency();
-	//BenchThroughput();
+	Bench("raw log", "ns", []() { return BenchLoggerLatency(ModeRaw); } );
+	Bench("simple fmt log", "ns", []() { return BenchLoggerLatency(ModeSimpleFmt); } );
+	Bench("param fmt log", "ns", []() { return BenchLoggerLatency(ModeParamFmt); } );
+	//BenchWriteLatency();
+	BenchThroughput();
 	//TestProcessLifecycle();
 	//TestFormattedWrite();
 	//TestRingBuffer();

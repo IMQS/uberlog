@@ -144,7 +144,7 @@ bool ProcessCreate(const char* cmd, const char** argv, proc_handle_t& handle, pr
 	else
 	{
 		// child
-		execv(cmd, (char *const *) argv);
+		execv(cmd, (char* const*) argv);
 		// Since we're using vfork, the only thing we're allowed to do now is call  __exit
 		_exit(1);
 		return false; // unreachable
@@ -157,7 +157,7 @@ bool WaitForProcessToDie(proc_handle_t handle, proc_id_t pid, uint32_t milliseco
 	for (;;)
 	{
 		int status = 0;
-		int r = waitpid(pid, &status, WNOHANG | WUNTRACED);
+		int r      = waitpid(pid, &status, WNOHANG | WUNTRACED);
 		if (r == pid)
 			return true;
 		usleep(1000);
@@ -522,6 +522,124 @@ size_t RingBuffer::AvailableForWrite()
 	return Size - 1 - AvailableForRead();
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TimeKeeper::TimeKeeper()
+{
+#ifdef _WIN32
+	timeb t1;
+	ftime(&t1);
+	TimezoneMinutes = t1.timezone;
+#else
+	tzset();
+	TimezoneMinutes = timezone / 60; // The global libc variable 'timezone' is set by tzset(), and is seconds west of UTC.
+#endif
+
+	// cache time zone
+	uint32_t tzhour = abs(TimezoneMinutes) / 60;
+	uint32_t tzmin  = abs(TimezoneMinutes) % 60;
+	snprintf(TimeZoneStr, 6, "%c%02u%02u", TimezoneMinutes <= 0 ? '+' : '-', tzhour, tzmin);
+
+	NewLocalEpoch();
+}
+
+void TimeKeeper::Format(char* buf)
+{
+	uint64_t seconds;
+	uint32_t nano;
+	UnixTimeNow(seconds, nano);
+
+	uint32_t dsec = (uint32_t) (seconds - LocalDayStartSeconds);
+	uint32_t hour = 0;
+	while (dsec >= 3600)
+	{
+		hour++;
+		dsec -= 3600;
+	}
+
+	uint32_t minute = 0;
+	while (dsec >= 60)
+	{
+		minute++;
+		dsec -= 60;
+	}
+
+	uint32_t milli = nano / 1000000;
+
+	memcpy(buf, DateStr, 10);
+	FormatUintDecimal(2, buf + 11, hour);
+	FormatUintDecimal(2, buf + 14, minute);
+	FormatUintDecimal(2, buf + 17, dsec);
+	FormatUintDecimal(3, buf + 20, milli);
+	buf[10] = 'T';
+	buf[13] = ':';
+	buf[16] = ':';
+	buf[19] = '.';
+	memcpy(buf + 23, TimeZoneStr, 5);
+}
+
+int64_t TimeKeeper::NanoSinceDayStart()
+{
+	return 0;
+}
+
+void TimeKeeper::NewLocalEpoch()
+{
+	uint64_t seconds;
+	uint32_t nano;
+	UnixTimeNow(seconds, nano);
+	tm t2;
+#ifdef _WIN32
+	time_t tmp = seconds;
+	gmtime_s(&t2, &tmp);
+#else
+	struct timespec tp = {0};
+	tp.tv_sec = seconds;
+	tp.tv_nsec = nano;
+	gmtime_r(&tp.tv_sec, &t2);
+#endif
+	LocalSeconds = seconds;
+	LocalNano = nano;
+	LocalDayStartSeconds = seconds - (t2.tm_hour * 3600 + t2.tm_min * 60 + t2.tm_sec);
+	strftime(DateStr, 11, "%Y-%m-%d", &t2);
+}
+
+void TimeKeeper::UnixTimeNow(uint64_t& seconds, uint32_t& nano)
+{
+#ifdef _WIN32
+	FILETIME ft;
+	GetSystemTimePreciseAsFileTime(&ft);
+	uint64_t raw = (uint64_t) ft.dwHighDateTime << 32 | (uint64_t) ft.dwLowDateTime;
+	uint64_t unix_time_100ns = raw - (370 * 365 - 276) * (uint64_t) 86400 * (uint64_t) 10000000;
+	seconds = unix_time_100ns / 10000000;
+	nano = unix_time_100ns % 10000000;
+#else
+	struct timespec tp;
+	clock_gettime(CLOCK_REALTIME, &tp);
+	seconds = tp.tv_sec;
+	nano = tp.tv_nsec;
+#endif
+	seconds -= TimezoneMinutes * 60;
+}
+
+void TimeKeeper::FormatUintDecimal(uint32_t ndigit, char* buf, uint32_t v)
+{
+	for (uint32_t i = 0; i < ndigit; i++)
+	{
+		buf[ndigit - i - 1] = "0123456789"[v % 10];
+		v /= 10;
+	}
+}
+
+void TimeKeeper::FormatUintHex(uint32_t ndigit, char* buf, uint32_t v)
+{
+	for (uint32_t i = 0; i < ndigit; i++)
+	{
+		buf[ndigit - i - 1] = "0123456789abcdef"[v % 16];
+		v /= 16;
+	}
+}
+
 } // namespace internal
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -641,7 +759,7 @@ bool Logger::Open()
 
 	//char args[4096];
 	//sprintf(args, "%u %u %s %lld %d", GetMyPID(), (uint32_t) RingBufferSize, Filename.c_str(), (long long) MaxFileSize, MaxNumArchives);
-	const int nArgs = 6;
+	const int   nArgs = 6;
 	std::string args[nArgs];
 	const char* argv[nArgs + 1];
 	args[0] = uberLoggerPath;
@@ -758,9 +876,10 @@ void Logger::LogDefaultFormat_Phase2(uberlog::Level level, tsf::StrLenPair msg, 
 	}
 	else
 	{
-		tm t2;
+		/*
+		tm       t2;
 		uint32_t milliseconds;
-		int32_t timezone_minutes;
+		int32_t  timezone_minutes;
 #ifdef _WIN32
 		timeb t1;
 		ftime(&t1);
@@ -775,13 +894,21 @@ void Logger::LogDefaultFormat_Phase2(uberlog::Level level, tsf::StrLenPair msg, 
 		clock_gettime(CLOCK_REALTIME, &tp);
 		tp.tv_sec -= timezone_minutes * 60;
 		gmtime_r(&tp.tv_sec, &t2);
-		milliseconds = (uint32_t) (tp.tv_nsec / 1000000);
+		milliseconds = (uint32_t)(tp.tv_nsec / 1000000);
 #endif
 		strftime(buf, 32, "%Y-%m-%dT%H:%M:%S.000+0000", &t2);
 		uint32_t tzhour = abs(timezone_minutes) / 60;
 		uint32_t tzmin  = abs(timezone_minutes) % 60;
 		snprintf(buf + 20, bufsize - 20, "%03u%c%02u%02u", milliseconds, timezone_minutes <= 0 ? '+' : '-', tzhour, tzmin);
-		snprintf(buf + 28, bufsize - 28, " [%c] %08x", LevelChar(level), (unsigned int) uberlog::internal::GetMyTID());
+		*/
+		TK.Format(buf);
+		//snprintf(buf + 28, bufsize - 28, " [%c] %08x", LevelChar(level), (unsigned int) uberlog::internal::GetMyTID());
+		buf[28] = ' ';
+		buf[29] = '[';
+		buf[30] = LevelChar(level);
+		buf[31] = ']';
+		buf[32] = ' ';
+		TimeKeeper::FormatUintHex(8, buf + 33, (unsigned int) uberlog::internal::GetMyTID());
 	}
 	buf[41] = ' ';
 	if (uberlog::internal::UseCRLF)

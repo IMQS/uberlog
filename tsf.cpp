@@ -181,6 +181,22 @@ TSF_FMT_API std::string fmt_core(const fmt_context& context, const char* fmt, ss
 
 TSF_FMT_API StrLenPair fmt_core(const fmt_context& context, const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size)
 {
+	if (nargs == 0)
+	{
+		// This is a common case worth optimizing. Unfortunately we cannot return 'fmt' directly, because it may be a temporary object.
+		size_t len = strlen(fmt);
+		if (staticbuf_size != 0 && len <= staticbuf_size + 1)
+		{
+			memcpy(staticbuf, fmt, len + 1);
+			return StrLenPair{staticbuf, len};
+		}
+		StrLenPair r;
+		r.Str = new char[len + 1];
+		r.Len = len;
+		memcpy(r.Str, fmt, len + 1);
+		return r;
+	}
+
 	ssize_t tokenstart = -1;	// true if we have passed a %, and are looking for the end of the token
 	ssize_t iarg = 0;
 	bool no_args_remaining;
