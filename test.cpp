@@ -266,10 +266,10 @@ struct Stats
 	}
 };
 
-void Bench(const char* title, const char* unit, std::function<double()> func)
+void Bench(const char* title, const char* unit, std::function<double()> func, int runs = 5)
 {
 	std::vector<double> samples;
-	for (int i = 0; i < 5; i++)
+	for (int i = 0; i < runs; i++)
 		samples.push_back(func());
 	auto stats = Stats::Compute(samples);
 
@@ -385,9 +385,9 @@ void HelloWorld()
 void TestAll()
 {
 	//HelloWorld();
-	//Bench("raw log", "ns", []() { return BenchLoggerLatency(ModeRaw); } );
-	//Bench("simple fmt log", "ns", []() { return BenchLoggerLatency(ModeSimpleFmt); } );
-	//Bench("param fmt log", "ns", []() { return BenchLoggerLatency(ModeParamFmt); } );
+	//Bench("raw log", "ns", []() { return BenchLoggerLatency(ModeRaw); }, 10);
+	//Bench("simple fmt log", "ns", []() { return BenchLoggerLatency(ModeSimpleFmt); }, 10);
+	//Bench("param fmt log", "ns", []() { return BenchLoggerLatency(ModeParamFmt); }, 10);
 	//Bench("spd comparison", "s", BenchSpdCompare);
 	//BenchFileWriteLatency();
 	//BenchThroughput();
