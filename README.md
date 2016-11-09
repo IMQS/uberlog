@@ -56,6 +56,21 @@ top of uberlog::Logger - either by deriving a class from it, or
 encapsulating it inside your own class. You can then use the LogRaw
 function of Logger to emit messages in whatever format you choose.
 
+## Benchmarks
+
+These benchmarks are on an i7-6700K
+
+| OS   |Latency| Throughput |
+|------|-------|------------|
+Windows| 485 ns| 350 MB/s 
+Linux  | 613 ns| 465 MB/s
+
+Those numbers are for a formatted log message that is around 200 bytes long.
+The dominant factor is the call to snprintf(). The actual ring buffer copy is
+around 40 ns, and the buildup of the date string is 130 ns.
+The ring buffer size affects the throughput, but the latency is independent
+of the ring buffer size.
+
 ### Ring Buffer Size
 
 The following table is a typical run on an Intel i7-6700K, on Windows.
