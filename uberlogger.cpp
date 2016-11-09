@@ -20,6 +20,7 @@ into the log file.
 #include <time.h>
 #endif
 
+#include <string.h>
 #include <string>
 #include <vector>
 #include <thread>
