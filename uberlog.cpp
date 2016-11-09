@@ -532,7 +532,7 @@ TimeKeeper::TimeKeeper()
 	TimezoneMinutes = t1.timezone;
 #else
 	tzset();
-	TimezoneMinutes = timezone / 60; // The global libc variable 'timezone' is set by tzset(), and is seconds west of UTC.
+	TimezoneMinutes    = timezone / 60; // The global libc variable 'timezone' is set by tzset(), and is seconds west of UTC.
 #endif
 
 	// cache time zone
@@ -540,7 +540,7 @@ TimeKeeper::TimeKeeper()
 	uint32_t tzmin  = abs(TimezoneMinutes) % 60;
 	snprintf(TimeZoneStr, 6, "%c%02u%02u", TimezoneMinutes <= 0 ? '+' : '-', tzhour, tzmin);
 
-	NewLocalEpoch();
+	NewDay();
 }
 
 void TimeKeeper::Format(char* buf)
@@ -548,8 +548,11 @@ void TimeKeeper::Format(char* buf)
 	uint64_t seconds;
 	uint32_t nano;
 	UnixTimeNow(seconds, nano);
+	
+	if (seconds - LocalDayStartSeconds >= 86400)
+		NewDay();
 
-	uint32_t dsec = (uint32_t) (seconds - LocalDayStartSeconds);
+	uint32_t dsec = (uint32_t)(seconds - LocalDayStartSeconds);
 	uint32_t hour = 0;
 	while (dsec >= 3600)
 	{
@@ -578,12 +581,7 @@ void TimeKeeper::Format(char* buf)
 	memcpy(buf + 23, TimeZoneStr, 5);
 }
 
-int64_t TimeKeeper::NanoSinceDayStart()
-{
-	return 0;
-}
-
-void TimeKeeper::NewLocalEpoch()
+void TimeKeeper::NewDay()
 {
 	uint64_t seconds;
 	uint32_t nano;
@@ -594,12 +592,10 @@ void TimeKeeper::NewLocalEpoch()
 	gmtime_s(&t2, &tmp);
 #else
 	struct timespec tp = {0};
-	tp.tv_sec = seconds;
-	tp.tv_nsec = nano;
+	tp.tv_sec          = seconds;
+	tp.tv_nsec         = nano;
 	gmtime_r(&tp.tv_sec, &t2);
 #endif
-	LocalSeconds = seconds;
-	LocalNano = nano;
 	LocalDayStartSeconds = seconds - (t2.tm_hour * 3600 + t2.tm_min * 60 + t2.tm_sec);
 	strftime(DateStr, 11, "%Y-%m-%d", &t2);
 }
@@ -609,15 +605,15 @@ void TimeKeeper::UnixTimeNow(uint64_t& seconds, uint32_t& nano)
 #ifdef _WIN32
 	FILETIME ft;
 	GetSystemTimePreciseAsFileTime(&ft);
-	uint64_t raw = (uint64_t) ft.dwHighDateTime << 32 | (uint64_t) ft.dwLowDateTime;
+	uint64_t raw             = (uint64_t) ft.dwHighDateTime << 32 | (uint64_t) ft.dwLowDateTime;
 	uint64_t unix_time_100ns = raw - (370 * 365 - 276) * (uint64_t) 86400 * (uint64_t) 10000000;
-	seconds = unix_time_100ns / 10000000;
-	nano = unix_time_100ns % 10000000;
+	seconds                  = unix_time_100ns / 10000000;
+	nano                     = (unix_time_100ns % 10000000) * 100;
 #else
 	struct timespec tp;
 	clock_gettime(CLOCK_REALTIME, &tp);
 	seconds = tp.tv_sec;
-	nano = tp.tv_nsec;
+	nano    = tp.tv_nsec;
 #endif
 	seconds -= TimezoneMinutes * 60;
 }
@@ -757,8 +753,6 @@ bool Logger::Open()
 	if (lastSlash != std::string::npos)
 		uberLoggerPath = myPath.substr(0, lastSlash + 1) + "uberlogger";
 
-	//char args[4096];
-	//sprintf(args, "%u %u %s %lld %d", GetMyPID(), (uint32_t) RingBufferSize, Filename.c_str(), (long long) MaxFileSize, MaxNumArchives);
 	const int   nArgs = 6;
 	std::string args[nArgs];
 	const char* argv[nArgs + 1];
@@ -876,33 +870,7 @@ void Logger::LogDefaultFormat_Phase2(uberlog::Level level, tsf::StrLenPair msg, 
 	}
 	else
 	{
-		/*
-		tm       t2;
-		uint32_t milliseconds;
-		int32_t  timezone_minutes;
-#ifdef _WIN32
-		timeb t1;
-		ftime(&t1);
-		timezone_minutes = t1.timezone;
-		t1.time -= timezone_minutes * 60;
-		gmtime_s(&t2, &t1.time);
-		milliseconds = (uint32_t) t1.millitm;
-#else
-		tzset();
-		timezone_minutes = timezone / 60; // The global libc variable 'timezone' is set by tzset(), and is seconds west of UTC.
-		struct timespec tp;
-		clock_gettime(CLOCK_REALTIME, &tp);
-		tp.tv_sec -= timezone_minutes * 60;
-		gmtime_r(&tp.tv_sec, &t2);
-		milliseconds = (uint32_t)(tp.tv_nsec / 1000000);
-#endif
-		strftime(buf, 32, "%Y-%m-%dT%H:%M:%S.000+0000", &t2);
-		uint32_t tzhour = abs(timezone_minutes) / 60;
-		uint32_t tzmin  = abs(timezone_minutes) % 60;
-		snprintf(buf + 20, bufsize - 20, "%03u%c%02u%02u", milliseconds, timezone_minutes <= 0 ? '+' : '-', tzhour, tzmin);
-		*/
 		TK.Format(buf);
-		//snprintf(buf + 28, bufsize - 28, " [%c] %08x", LevelChar(level), (unsigned int) uberlog::internal::GetMyTID());
 		buf[28] = ' ';
 		buf[29] = '[';
 		buf[30] = LevelChar(level);

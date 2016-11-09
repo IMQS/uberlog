@@ -8,6 +8,8 @@ into the log file.
 #include <windows.h>
 #include <io.h>
 #include <fcntl.h>
+#include <sys/timeb.h>
+#include <sys/types.h>
 #endif
 
 #ifdef __linux__
@@ -140,14 +142,21 @@ private:
 		char timeBuf[100];
 		tm   timev;
 #ifdef _WIN32
-		__time64_t t;
-		_time64(&t);
-		_gmtime64_s(&timev, &t);
+		struct timeb t;
+		ftime(&t);
+		_gmtime64_s(&timev, &t.time);
+		uint32_t millis = (uint32_t) t.millitm;
 #else
-		time_t t = time(nullptr);
+		struct timespec tp;
+		clock_gettime(CLOCK_REALTIME, &tp);
+		time_t t = tp.tv_sec;
+		uint32_t millis = tp.tv_nsec / 1000000;
 		gmtime_r(&t, &timev);
 #endif
-		strftime(timeBuf, sizeof(timeBuf), "-%Y-%m-%dT%H-%M-%SZ", &timev);
+		strftime(timeBuf, sizeof(timeBuf), "-%Y-%m-%dT%H-%M-%S-", &timev);
+		char milliBuf[20];
+		snprintf(milliBuf, 20, "%03u-Z", millis);
+		strcat(timeBuf, milliBuf);
 
 		// build the archive filename
 		std::string ext     = FilenameExtension();

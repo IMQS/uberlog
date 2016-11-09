@@ -46,6 +46,20 @@ const char* EOL = "\r\n";
 const char* EOL = "\n";
 #endif
 
+double AccurateTimeSeconds()
+{
+#ifdef _MSC_VER
+	LARGE_INTEGER c, f;
+	QueryPerformanceCounter(&c);
+	QueryPerformanceFrequency(&f);
+	return (double) c.QuadPart / (double) f.QuadPart;
+#else
+	struct timespec tp;
+	clock_gettime(CLOCK_MONOTONIC, &tp);
+	return (double) tp.tv_sec + (double) tp.tv_nsec / 1000000000.0;
+#endif
+}
+
 // If 'expected' is null, verify that file cannot be opened.
 void LogFileEquals(const char* expected)
 {
@@ -255,19 +269,11 @@ struct Stats
 void Bench(const char* title, const char* unit, std::function<double()> func)
 {
 	std::vector<double> samples;
-	for (int i = 0; i < 100; i++)
-	{
+	for (int i = 0; i < 5; i++)
 		samples.push_back(func());
-		if (i >= 10)
-		{
-			auto stats = Stats::Compute(samples);
-			if (stats.CV < 0.05)
-				break;
-		}
-	}
 	auto stats = Stats::Compute(samples);
 
-	printf("%-20s %.2f %s (+- %.2f)\n", title, stats.Mean, unit, stats.StdDev);
+	printf("%-20s %.2f %s (+- %.2f) (CV %.3f)\n", title, stats.Mean, unit, stats.StdDev, stats.CV);
 }
 
 void BenchThroughput()
@@ -285,9 +291,7 @@ void BenchThroughput()
 			auto          start = std::chrono::system_clock::now();
 			size_t        niter = 5 * 10 * 1000 * 1000 / mlen;
 			for (size_t i = 0; i < niter; i++)
-			{
 				oc.Log.LogRaw(msg.c_str(), msg.length());
-			}
 			oc.Log.Close();
 			double elapsed_s = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start).count() / 1000.0;
 			printf("%6d %6d %6.0f %7.0f\n", (int) ringKB, (int) mlen, (mlen * niter / 1024.0) / elapsed_s, niter / elapsed_s);
@@ -295,18 +299,14 @@ void BenchThroughput()
 	}
 }
 
-double AccurateTimeSeconds()
+double BenchSpdCompare()
 {
-#ifdef _MSC_VER
-	LARGE_INTEGER c, f;
-	QueryPerformanceCounter(&c);
-	QueryPerformanceFrequency(&f);
-	return (double) c.QuadPart / (double) f.QuadPart;
-#else
-	struct timespec tp;
-	clock_gettime(CLOCK_MONOTONIC, &tp);
-	return (double) tp.tv_sec + (double) tp.tv_nsec / 1000000000.0;
-#endif
+	int nmsg = 1000000;
+	LogOpenCloser oc(1024 * 1024, 5 * 1024 * 1024);
+	double start = AccurateTimeSeconds();
+	for (int i = 0; i < nmsg; i++)
+		oc.Log.Info("uberlog message %v: This is some text for your pleasure", i);
+	return AccurateTimeSeconds() - start;
 }
 
 enum Modes
@@ -341,11 +341,9 @@ double BenchLoggerLatency(Modes mode)
 	}
 	double end = AccurateTimeSeconds();
 	return 1000000000.0 * (end - start) / count;
-	//const char* zmode = mode == 0 ? "formatted" : "raw";
-	//tsf::printfmt("ns per message (%s): %v\n", zmode, 1000000000 * (end - start) / count);
 }
 
-void BenchWriteLatency()
+void BenchFileWriteLatency()
 {
 #ifdef _WIN32
 	HANDLE fd = CreateFileA("xyz", GENERIC_READ | GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
@@ -386,14 +384,16 @@ void HelloWorld()
 
 void TestAll()
 {
-	Bench("raw log", "ns", []() { return BenchLoggerLatency(ModeRaw); } );
-	Bench("simple fmt log", "ns", []() { return BenchLoggerLatency(ModeSimpleFmt); } );
-	Bench("param fmt log", "ns", []() { return BenchLoggerLatency(ModeParamFmt); } );
-	//BenchWriteLatency();
-	BenchThroughput();
-	//TestProcessLifecycle();
-	//TestFormattedWrite();
-	//TestRingBuffer();
+	//HelloWorld();
+	//Bench("raw log", "ns", []() { return BenchLoggerLatency(ModeRaw); } );
+	//Bench("simple fmt log", "ns", []() { return BenchLoggerLatency(ModeSimpleFmt); } );
+	//Bench("param fmt log", "ns", []() { return BenchLoggerLatency(ModeParamFmt); } );
+	//Bench("spd comparison", "s", BenchSpdCompare);
+	//BenchFileWriteLatency();
+	//BenchThroughput();
+	TestProcessLifecycle();
+	TestFormattedWrite();
+	TestRingBuffer();
 }
 
 #ifdef _WIN32

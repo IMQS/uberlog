@@ -86,29 +86,24 @@ public:
 };
 
 // The TimeKeeper's job is to speed up the creation of textual time stamps (eg. 2015-07-15T14:53:51.979+0200)
-// We do this by keeping a local epoch, which has two variables:
-// 1. The system time of the start of the current day
-// 2. The system time when we last reset our local epoch.
-// We recreate our local epoch every 60 seconds.
+// We do this by keeping a cache of the date string.
+// That means we only need to build up the time string for each request, which is much simpler than computing the calendar day.
 class TimeKeeper
 {
 public:
 	TimeKeeper();
 
-	void Format(char* buf);
-	static void    FormatUintDecimal(uint32_t ndigit, char* buf, uint32_t v);
-	static void    FormatUintHex(uint32_t ndigit, char* buf, uint32_t v);
+	void        Format(char* buf);
+	static void FormatUintDecimal(uint32_t ndigit, char* buf, uint32_t v);
+	static void FormatUintHex(uint32_t ndigit, char* buf, uint32_t v);
 
 private:
 	int      TimezoneMinutes      = 0; // Minutes west of UTC
-	uint64_t LocalSeconds         = 0;
-	uint32_t LocalNano            = 0;
 	uint64_t LocalDayStartSeconds = 0;
-	char     DateStr[11];     // 2015-01-01
-	char     TimeZoneStr[6];  // +0200
+	char     DateStr[11];    // 2015-01-01
+	char     TimeZoneStr[6]; // +0200
 
-	void    NewLocalEpoch();
-	int64_t NanoSinceDayStart();
+	void    NewDay();
 	void    UnixTimeNow(uint64_t& seconds, uint32_t& nano);
 };
 
