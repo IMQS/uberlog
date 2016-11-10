@@ -6,6 +6,7 @@ uberlog is a cross platform C++ logging system that is:
 2. Fast
 3. Robust
 4. Supported on Linux and Windows
+5. MIT License
 
 ## Small
 Two headers, and three source files. Only 2085 lines of code, excluding tests.
