@@ -385,12 +385,12 @@ void HelloWorld()
 void TestAll()
 {
 	//HelloWorld();
-	//Bench("raw log", "ns", []() { return BenchLoggerLatency(ModeRaw); }, 10);
-	//Bench("simple fmt log", "ns", []() { return BenchLoggerLatency(ModeSimpleFmt); }, 10);
-	//Bench("param fmt log", "ns", []() { return BenchLoggerLatency(ModeParamFmt); }, 10);
-	//Bench("spd comparison", "s", BenchSpdCompare);
+	Bench("raw log", "ns", []() { return BenchLoggerLatency(ModeRaw); }, 10);
+	Bench("simple fmt log", "ns", []() { return BenchLoggerLatency(ModeSimpleFmt); }, 10);
+	Bench("param fmt log", "ns", []() { return BenchLoggerLatency(ModeParamFmt); }, 10);
+	Bench("spd comparison", "s", BenchSpdCompare);
 	//BenchFileWriteLatency();
-	//BenchThroughput();
+	BenchThroughput();
 	TestProcessLifecycle();
 	TestFormattedWrite();
 	TestRingBuffer();

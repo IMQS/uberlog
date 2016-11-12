@@ -11,6 +11,16 @@ namespace tsf {
 
 static const size_t argbuf_arraysize = 16;
 
+#ifdef _WIN32
+	const char* i64Prefix = "I64";
+	const char* wcharPrefix = "";
+	const char wcharType = 'S';
+#else
+	const char* i64Prefix = "ll";
+	const char* wcharPrefix = "l";
+	const char wcharType = 's';
+#endif
+
 class StackBuffer
 {
 public:
@@ -58,7 +68,112 @@ public:
 		*p = c;
 	}
 
+	size_t RemainingSpace() const { return Capacity - Pos; }
+
 };
+
+static int format_string(char* destination, size_t count, const char* format_str, const char* s)
+{
+	if (format_str[0] == '%' && format_str[1] == 's')
+	{
+		size_t i = 0;
+		for (; i < count; i++)
+		{
+			if (!s[i])
+				return (int) i;
+			destination[i] = s[i];
+		}
+		return -1;
+	}
+	return fmt_snprintf(destination, count, format_str, s);
+}
+
+template <typename TInt, int tbase, bool upcase>
+int format_integer(char* destination, TInt value)
+{
+	// we could theoretically do a lower base than 10, but then our static buffer would need to be bigger.
+	static_assert(tbase >= 10 && tbase <= 36, "base invalid");
+	TInt base = (TInt) tbase;
+	char buf[20];
+
+	const char* lut = upcase ? "ZYXWVUTSRQPONMLKJIHGFEDCBA9876543210123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ" : "zyxwvutsrqponmlkjihgfedcba9876543210123456789abcdefghijklmnopqrstuvwxyz";
+
+	size_t i = 0;
+	TInt tmp_value;
+	do
+	{
+		tmp_value = value;
+		value /= base;
+		buf[i++] = lut[35 + (tmp_value - value * base)];
+	} while (value);
+
+	if (tmp_value < 0)
+		buf[i++] = '-';
+
+	size_t n = i;
+	i--;
+	for (size_t j = 0; j < n; j++, i--)
+		destination[j] = buf[i];
+	return (int) n;
+}
+
+static int format_int32(char* destination, size_t count, const char* format_str, int32_t v)
+{
+	switch (format_str[1])
+	{
+	case 'd':
+	case 'i':
+		if (count >= 11)
+			return format_integer<int32_t, 10, false>(destination, v);
+		break;
+	case 'u':
+		if (count >= 11)
+			return format_integer<uint32_t, 10, false>(destination, v);
+		break;
+	case 'x':
+		if (count >= 8)
+			return format_integer<uint32_t, 16, false>(destination, v);
+		break;
+	case 'X':
+		if (count >= 8)
+			return format_integer<uint32_t, 16, true>(destination, v);
+		break;
+	}
+	return fmt_snprintf(destination, count, format_str, v);
+}
+
+static int format_int64(char* destination, size_t count, const char* format_str, int64_t v)
+{
+#ifdef _WIN32
+	bool isPlain = format_str[1] == i64Prefix[0] && format_str[2] == i64Prefix[1] && format_str[3] == i64Prefix[2];
+#else
+	bool isPlain = format_str[1] == i64Prefix[0] && format_str[2] == i64Prefix[1];
+#endif
+	if (isPlain)
+	{
+		switch (format_str[4])
+		{
+		case 'd':
+		case 'i':
+			if (count >= 20)
+				return format_integer<int64_t, 10, false>(destination, v);
+			break;
+		case 'u':
+			if (count >= 20)
+				return format_integer<uint64_t, 10, false>(destination, v);
+			break;
+		case 'x':
+			if (count >= 16)
+				return format_integer<uint64_t, 16, false>(destination, v);
+			break;
+		case 'X':
+			if (count >= 16)
+				return format_integer<uint64_t, 16, true>(destination, v);
+			break;
+		}
+	}
+	return fmt_snprintf(destination, count, format_str, v);
+}
 
 static inline void fmt_settype(char argbuf[argbuf_arraysize], size_t pos, const char* width, char type)
 {
@@ -93,16 +208,6 @@ static inline int fmt_output_with_snprintf(char* outbuf, char fmt_type, char arg
 #define				SETTYPE1(type)			fmt_settype( argbuf, argbufsize, nullptr, type )
 #define				SETTYPE2(width, type)	fmt_settype( argbuf, argbufsize, width, type )
 
-#ifdef _WIN32
-	const char* i64Prefix = "I64";
-	const char* wcharPrefix = "";
-	const char wcharType = 'S';
-#else
-	const char* i64Prefix = "ll";
-	const char* wcharPrefix = "l";
-	const char wcharType = 's';
-#endif
-
 	bool tokenint = false;
 	bool tokenreal = false;
 
@@ -135,26 +240,27 @@ static inline int fmt_output_with_snprintf(char* outbuf, char fmt_type, char arg
 		return 0;
 	case fmtarg::TCStr:
 		SETTYPE2("", 's');
-		return fmt_snprintf(outbuf, outputSize, argbuf, arg->CStr);
+		return format_string(outbuf, outputSize, argbuf, arg->CStr);
 	case fmtarg::TWStr:
 		SETTYPE2(wcharPrefix, wcharType);
 		return fmt_snprintf(outbuf, outputSize, argbuf, arg->WStr);
 	case fmtarg::TI32:
 		if (tokenint)	{ SETTYPE2("", fmt_type); }
 		else			{ SETTYPE2("", 'd'); }
-		return fmt_snprintf(outbuf, outputSize, argbuf, arg->I32);
+		return format_int32(outbuf, outputSize, argbuf, arg->I32);
 	case fmtarg::TU32:
 		if (tokenint)	{ SETTYPE2("", fmt_type); }
 		else			{ SETTYPE2("", 'u'); }
-		return fmt_snprintf(outbuf, outputSize, argbuf, arg->UI32);
+		return format_int32(outbuf, outputSize, argbuf, arg->UI32);
 	case fmtarg::TI64:
 		if (tokenint)	{ SETTYPE2(i64Prefix, fmt_type); }
 		else			{ SETTYPE2(i64Prefix, 'd'); }
-		return fmt_snprintf(outbuf, outputSize, argbuf, arg->I64);
+		return format_int64(outbuf, outputSize, argbuf, arg->I64);
+		//return fmt_snprintf(outbuf, outputSize, argbuf, arg->UI64);
 	case fmtarg::TU64:
 		if (tokenint)	{ SETTYPE2(i64Prefix, fmt_type); }
 		else			{ SETTYPE2(i64Prefix, 'u'); }
-		return fmt_snprintf(outbuf, outputSize, argbuf, arg->UI64);
+		return format_int64(outbuf, outputSize, argbuf, arg->UI64);
 	case fmtarg::TDbl:
 		if (tokenreal)	{ SETTYPE1(fmt_type); }
 		else			{ SETTYPE1('g'); }
@@ -309,14 +415,24 @@ TSF_FMT_API StrLenPair fmt_core(const fmt_context& context, const char* fmt, ssi
 		}
 		else
 		{
-			switch (fmt[i])
-			{
-			case '%':
+			// Look ahead to find the next % token. Most of our time is spend just
+			// scanning through regular text, so it pays to make that fast.
+			// In order to do that, we determine up front how much space is left in
+			// our buffer, and then fill it up without checking at each character,
+			// whether we have enough space. This turns out to be a big win.
+			ssize_t stopAt = i + output.RemainingSpace();
+			for (; i < stopAt && fmt[i] != '%' && fmt[i] != 0; i++)
+				output.Buffer[output.Pos++] = fmt[i];
+
+			if (fmt[i] == '%')
 				tokenstart = i;
+			else if (fmt[i] == 0)
 				break;
-			default:
-				output.Add(fmt[i]);
-				break;
+			else
+			{
+				// need more buffer space; come around for another pass
+				output.Reserve(1);
+				i--;
 			}
 		}
 	}
