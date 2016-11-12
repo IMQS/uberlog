@@ -63,8 +63,8 @@ These benchmarks are on an i7-6700K
 
 | OS   |Latency| Throughput |
 |------|-------|------------|
-Windows| 485 ns| 350 MB/s 
-Linux  | 613 ns| 465 MB/s
+Windows| 200 ns| 350 MB/s 
+Linux  | 280 ns| 465 MB/s
 
 Those numbers are for a formatted log message that is around 200 bytes long.
 The dominant factor is the call to snprintf(). The actual ring buffer copy is
