@@ -31,6 +31,11 @@
 #define timeb _timeb
 #endif
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 6031) // /analyze is worried about us ignoring snprintf return value, but we're statically sized everywhere.
+#endif
+
 using namespace uberlog::internal;
 
 namespace uberlog {
@@ -856,6 +861,11 @@ bool Logger::WaitForRingToBeEmpty(uint32_t milliseconds)
 	return true;
 }
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 6386) // /analyze thinks we might overrun 'buf'
+#endif
+
 void Logger::LogDefaultFormat_Phase2(uberlog::Level level, tsf::StrLenPair msg, bool buf_is_static)
 {
 	// [------------- 42 characters ------------]
@@ -905,11 +915,19 @@ void Logger::LogDefaultFormat_Phase2(uberlog::Level level, tsf::StrLenPair msg, 
 
 	LogRaw(buf, bufsize - 1);
 
-	if (!buf_is_static)
-		delete[] buf;
-
 	if (level == Level::Fatal)
 		Panic(buf);
+
+	if (!buf_is_static)
+		delete[] buf;
 }
 
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
 } // namespace uberlog
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif

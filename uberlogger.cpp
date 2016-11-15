@@ -35,6 +35,11 @@ into the log file.
 #include <stdint.h>
 #include "uberlog.h"
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 6031) // /analyze is worried about us ignoring snprintf return value, but we're statically sized everywhere.
+#endif
+
 namespace uberlog {
 namespace internal {
 
@@ -336,7 +341,8 @@ public:
 			watcherThread.join();
 
 #ifdef _WIN32
-		CloseHandle(CloseMessageEvent);
+		if (CloseMessageEvent)
+			CloseHandle(CloseMessageEvent);
 		CloseMessageEvent = NULL;
 #endif
 		delete[] WriteBuf;
@@ -539,3 +545,7 @@ int main(int argc, char** argv)
 
 	return 0;
 }
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
