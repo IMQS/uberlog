@@ -1,9 +1,14 @@
 #pragma once
 
 #include <atomic>
+#include <mutex>
 #include <string>
 #include <time.h>
 #include "tsf.h"
+
+#ifndef UBERLOG_API
+#define UBERLOG_API
+#endif
 
 namespace uberlog {
 
@@ -98,13 +103,14 @@ public:
 	static void FormatUintHex(uint32_t ndigit, char* buf, uint32_t v);
 
 private:
-	int      TimezoneMinutes      = 0; // Minutes west of UTC
-	uint64_t LocalDayStartSeconds = 0;
-	char     DateStr[11];    // 2015-01-01
-	char     TimeZoneStr[6]; // +0200
+	int        TimezoneMinutes      = 0; // Minutes west of UTC
+	std::atomic<uint64_t>   LocalDayStartSeconds;
+	char       DateStr[11];    // 2015-01-01
+	char       TimeZoneStr[6]; // +0200
+	std::mutex Lock;           // Guards access to NewDay()
 
-	void    NewDay();
-	void    UnixTimeNow(uint64_t& seconds, uint32_t& nano);
+	void NewDay();
+	void UnixTimeNow(uint64_t& seconds, uint32_t& nano) const;
 };
 
 // A command sent over the ring buffer
@@ -155,7 +161,7 @@ If you want to customize the format of the log messages, then you must wrap this
 inside your own logger, and redirect calls down to LogRaw or LogFmt. Creating a new
 class that inherits from this is also a reasonable approach.
 */
-class Logger
+class UBERLOG_API Logger
 {
 public:
 	friend uberlog::internal::TestHelper;
@@ -241,6 +247,7 @@ private:
 	const int                   EolLen                    = uberlog::internal::UseCRLF ? 2 : 1;
 	bool                        IsOpen                    = false;
 	std::atomic<uberlog::Level> Level;
+	std::mutex                  Lock; // Guards access to all public functions
 	internal::TimeKeeper        TK;
 	internal::RingBuffer        Ring;
 	internal::proc_handle_t     HChildProcess = nullptr; // not used on linux

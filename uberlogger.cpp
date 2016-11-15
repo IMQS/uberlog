@@ -4,12 +4,18 @@ Here we consume log messages from the ring buffer, and write them
 into the log file.
 */
 #ifdef _WIN32
+#define _CRT_SECURE_NO_WARNINGS
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <io.h>
 #include <fcntl.h>
 #include <sys/timeb.h>
 #include <sys/types.h>
+#define write _write
+#define open _open
+#define close _close
 #endif
 
 #ifdef __linux__
@@ -70,7 +76,7 @@ public:
 			return true;
 
 		// ignore the possibility that write() is allowed to write less than 'len' bytes.
-		auto res = write(FD, buf, len);
+		auto res = write(FD, buf, (int) len);
 		if (res == -1)
 		{
 			// Perhaps something has happened on the file system, such as a network share being lost and then restored, etc.
@@ -78,7 +84,7 @@ public:
 			Close();
 			if (!Open())
 				return false;
-			res = write(FD, buf, len);
+			res = write(FD, buf, (int) len);
 		}
 
 		if (res != -1)
@@ -91,19 +97,20 @@ public:
 		if (FD == -1)
 		{
 #ifdef _WIN32
-			FD       = _open(Filename.c_str(), _O_BINARY | _O_WRONLY | _O_CREAT, _S_IREAD | _S_IWRITE);
+			FD = _open(Filename.c_str(), _O_BINARY | _O_WRONLY | _O_CREAT, _S_IREAD | _S_IWRITE);
+			if (FD == -1)
+				return false;
 			FileSize = (int64_t) _lseeki64(FD, 0, SEEK_END);
 #else
-			FD       = open(Filename.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+			FD = open(Filename.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+			if (FD == -1)
+				return false;
 			FileSize = (int64_t) lseek64(FD, 0, SEEK_END);
 #endif
-			if (FD != -1)
+			if (FileSize == -1)
 			{
-				if (FileSize == -1)
-				{
-					close(FD);
-					FD = -1;
-				}
+				close(FD);
+				FD = -1;
 			}
 		}
 		return FD != -1;
@@ -281,7 +288,7 @@ public:
 		// Try to open file immediately, for consistency & predictability sake
 		Log.Open();
 
-		uint32_t sleepMS = 0;
+		uint32_t sleepMS      = 0;
 		uint64_t totalSleepMS = 0;
 
 		while (!IsParentDead && !HasReceivedCloseMessage())

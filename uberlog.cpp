@@ -1,6 +1,8 @@
 #ifdef _WIN32
 #define _CRT_SECURE_NO_WARNINGS
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <sys/types.h>
 #else
@@ -144,7 +146,7 @@ bool ProcessCreate(const char* cmd, const char** argv, proc_handle_t& handle, pr
 	else
 	{
 		// child
-		execv(cmd, (char* const*) argv);
+		execv(cmd, (char* const *) argv);
 		// Since we're using vfork, the only thing we're allowed to do now is call  __exit
 		_exit(1);
 		return false; // unreachable
@@ -535,6 +537,8 @@ TimeKeeper::TimeKeeper()
 	TimezoneMinutes    = timezone / 60; // The global libc variable 'timezone' is set by tzset(), and is seconds west of UTC.
 #endif
 
+	LocalDayStartSeconds = 0;
+
 	// cache time zone
 	uint32_t tzhour = abs(TimezoneMinutes) / 60;
 	uint32_t tzmin  = abs(TimezoneMinutes) % 60;
@@ -548,11 +552,11 @@ void TimeKeeper::Format(char* buf)
 	uint64_t seconds;
 	uint32_t nano;
 	UnixTimeNow(seconds, nano);
-	
-	if (seconds - LocalDayStartSeconds >= 86400)
+
+	if (seconds - LocalDayStartSeconds.load() >= 86400)
 		NewDay();
 
-	uint32_t dsec = (uint32_t)(seconds - LocalDayStartSeconds);
+	uint32_t dsec = (uint32_t)(seconds - LocalDayStartSeconds.load());
 	uint32_t hour = 0;
 	while (dsec >= 3600)
 	{
@@ -583,8 +587,9 @@ void TimeKeeper::Format(char* buf)
 
 void TimeKeeper::NewDay()
 {
-	uint64_t seconds;
-	uint32_t nano;
+	std::lock_guard<std::mutex> guard(Lock);
+	uint64_t                    seconds;
+	uint32_t                    nano;
 	UnixTimeNow(seconds, nano);
 	tm t2;
 #ifdef _WIN32
@@ -596,11 +601,11 @@ void TimeKeeper::NewDay()
 	tp.tv_nsec         = nano;
 	gmtime_r(&tp.tv_sec, &t2);
 #endif
-	LocalDayStartSeconds = seconds - (t2.tm_hour * 3600 + t2.tm_min * 60 + t2.tm_sec);
+	LocalDayStartSeconds.store(seconds - (t2.tm_hour * 3600 + t2.tm_min * 60 + t2.tm_sec));
 	strftime(DateStr, 11, "%Y-%m-%d", &t2);
 }
 
-void TimeKeeper::UnixTimeNow(uint64_t& seconds, uint32_t& nano)
+void TimeKeeper::UnixTimeNow(uint64_t& seconds, uint32_t& nano) const
 {
 #ifdef _WIN32
 	FILETIME ft;
@@ -653,12 +658,14 @@ Logger::~Logger()
 
 void Logger::Open(const char* filename)
 {
+	std::lock_guard<std::mutex> guard(Lock);
 	Filename = FullPath(filename);
 	Open();
 }
 
 void Logger::Close()
 {
+	std::lock_guard<std::mutex> guard(Lock);
 	if (!IsOpen)
 		return;
 
@@ -678,6 +685,7 @@ void Logger::Close()
 
 void Logger::SetRingBufferSize(size_t ringBufferSize)
 {
+	std::lock_guard<std::mutex> guard(Lock);
 	if (IsOpen)
 	{
 		OutOfBandWarning("Logger.SetRingBufferSize must be called before Open\n");
@@ -688,6 +696,7 @@ void Logger::SetRingBufferSize(size_t ringBufferSize)
 
 void Logger::SetArchiveSettings(int64_t maxFileSize, int32_t maxNumArchives)
 {
+	std::lock_guard<std::mutex> guard(Lock);
 	if (IsOpen)
 	{
 		OutOfBandWarning("Logger.SetArchiveSettings must be called before Open\n");
@@ -699,11 +708,13 @@ void Logger::SetArchiveSettings(int64_t maxFileSize, int32_t maxNumArchives)
 
 void Logger::SetLevel(uberlog::Level level)
 {
+	std::lock_guard<std::mutex> guard(Lock);
 	Level = level;
 }
 
 void Logger::LogRaw(const void* data, size_t len)
 {
+	std::lock_guard<std::mutex> guard(Lock);
 	if (!IsOpen)
 	{
 		OutOfBandWarning("Logger.LogRaw called but log is not open\n");
@@ -768,6 +779,7 @@ bool Logger::Open()
 
 	if (!ProcessCreate(uberLoggerPath.c_str(), argv, HChildProcess, ChildPID))
 	{
+		OutOfBandWarning("Unable to start uberlogger process\n");
 		CloseRingBuffer();
 		return false;
 	}
