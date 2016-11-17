@@ -103,11 +103,11 @@ public:
 	static void FormatUintHex(uint32_t ndigit, char* buf, uint32_t v);
 
 private:
-	int        TimezoneMinutes      = 0; // Minutes west of UTC
-	std::atomic<uint64_t>   LocalDayStartSeconds;
-	char       DateStr[11];    // 2015-01-01
-	char       TimeZoneStr[6]; // +0200
-	std::mutex Lock;           // Guards access to NewDay()
+	int                   TimezoneMinutes = 0;  // Minutes west of UTC
+	std::atomic<uint64_t> LocalDayStartSeconds; // Unix time, in local time zone, of start of today.
+	char                  DateStr[11];          // 2015-01-01
+	char                  TimeZoneStr[6];       // +0200
+	std::mutex            Lock;                 // Guards access to NewDay()
 
 	void NewDay();
 	void UnixTimeNow(uint64_t& seconds, uint32_t& nano) const;

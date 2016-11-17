@@ -33,7 +33,7 @@
 
 #ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable: 6031) // /analyze is worried about us ignoring snprintf return value, but we're statically sized everywhere.
+#pragma warning(disable : 6031) // /analyze is worried about us ignoring snprintf return value, but we're statically sized everywhere.
 #endif
 
 using namespace uberlog::internal;
@@ -863,7 +863,7 @@ bool Logger::WaitForRingToBeEmpty(uint32_t milliseconds)
 
 #ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable: 6386) // /analyze thinks we might overrun 'buf'
+#pragma warning(disable : 6386) // /analyze thinks we might overrun 'buf'
 #endif
 
 void Logger::LogDefaultFormat_Phase2(uberlog::Level level, tsf::StrLenPair msg, bool buf_is_static)

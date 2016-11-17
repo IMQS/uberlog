@@ -37,7 +37,7 @@ into the log file.
 
 #ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable: 6031) // /analyze is worried about us ignoring snprintf return value, but we're statically sized everywhere.
+#pragma warning(disable : 6031) // /analyze is worried about us ignoring snprintf return value, but we're statically sized everywhere.
 #endif
 
 namespace uberlog {
