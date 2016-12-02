@@ -537,6 +537,11 @@ TimeKeeper::TimeKeeper()
 	timeb t1;
 	ftime(&t1);
 	TimezoneMinutes = t1.timezone;
+
+	auto kernel = GetModuleHandle("kernel32.dll");
+	if (!kernel)
+		Panic("Unable to get kernel32.dll handle");
+	__GetSystemTimePreciseAsFileTime = (decltype(__GetSystemTimePreciseAsFileTime)) GetProcAddress(kernel, "GetSystemTimePreciseAsFileTime");
 #else
 	tzset();
 	TimezoneMinutes    = timezone / 60; // The global libc variable 'timezone' is set by tzset(), and is seconds west of UTC.
@@ -614,7 +619,10 @@ void TimeKeeper::UnixTimeNow(uint64_t& seconds, uint32_t& nano) const
 {
 #ifdef _WIN32
 	FILETIME ft;
-	GetSystemTimePreciseAsFileTime(&ft);
+	if (__GetSystemTimePreciseAsFileTime)
+		__GetSystemTimePreciseAsFileTime(&ft);
+	else
+		GetSystemTimeAsFileTime(&ft);
 	uint64_t raw             = (uint64_t) ft.dwHighDateTime << 32 | (uint64_t) ft.dwLowDateTime;
 	uint64_t unix_time_100ns = raw - (370 * 365 - 276) * (uint64_t) 86400 * (uint64_t) 10000000;
 	seconds                  = unix_time_100ns / 10000000;

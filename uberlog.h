@@ -109,6 +109,11 @@ private:
 	char                  TimeZoneStr[6];       // +0200
 	std::mutex            Lock;                 // Guards access to NewDay()
 
+// Dynamically load GetSystemTimePreciseAsFileTime so that we can fall back to GetSystemTimeAsFileTime on a Windows 7 class OS.
+#ifdef _WIN32
+	void(WINAPI* __GetSystemTimePreciseAsFileTime)(_Out_ LPFILETIME lpSystemTimeAsFileTime) = nullptr;
+#endif
+
 	void NewDay();
 	void UnixTimeNow(uint64_t& seconds, uint32_t& nano) const;
 };
