@@ -78,20 +78,29 @@ your program to produce the log message and add it to the ring buffer. There
 is so much headroom in throughput, that you've probably got worse problems
 if you're hitting those limits. 
 
-To put this all into context, a file system write is around 1500 ns. Let's
-assume that you don't put much effort into optimizing your formatting
-functions, or your date string generation, and you end up with another 1000 ns
-for the generation of the log string, so added together, that comes to
+To put this all into context, let's consider the performance that you get from
+a naive logging system that you can easily roll yourself, which simply issues an
+OS level `write` call for every log message. What kind of performance do you get
+from such a system, and how does it compare to uberlog?
+
+To start with, a kernel call to write 100 bytes to a file is around 1500 ns.
+Now let's assume that you don't put much effort into optimizing your formatting
+function, or your date string generation, and you end up with another 1000 ns
+for the generation of the final log string. Add those together, and you get about
 2500 ns per log message.
 
-Now, let's say you're writing 100 log messages per second. With naive file writes,
-that comes to 0.25 milliseconds per second spent logging, which is 0.025% of your time.
-Even at 1000 messages per second, you're only spending 0.25% of your time
-logging. At 100000 log messages per second, we start to see some real overhead,
-with 25% of your time just logging. By using uberlog, you reduce that to
-just 2% overhead. Uberlog takes pains to make all phases of the log write fast,
-from the type safe format, to the output into the ring buffer.
+What does this mean for a typical application? Let's say you're writing 100 log
+messages per second. With our hypothetical naive logging system, that amounts to
+0.25 milliseconds per second spent logging, which is 0.025% of your time.
+If we crank our throughput up to 1000 messages per second, our naive system is
+spending 0.25% of total time, just logging, which is still a pretty small number.
+At 100000 log messages per second, we start to see some real overhead, with 25%
+of our time spent just logging. By using uberlog, that overhead drops to just 2%.
 
-When you look at these numbers, it becomes quite clear that unless you're
+Uberlog takes pains to make all phases of the log write fast, from the type safe
+format, to the caching of the date string, to the output into the ring buffer.
+That is how we're able to achieve a 10x speedup over a naive system.
+
+When you look at the number above, it becomes quite clear that unless you're
 outputting manys thousands of log messages per second, a naive solution is
-just fine. But if you want the best, you know what to use!
+just fine. But if you want the best, you've come to the right place!
