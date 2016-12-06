@@ -28,6 +28,7 @@ typedef HANDLE            shm_handle_t;
 typedef DWORD             proc_id_t;
 static const shm_handle_t NullShmHandle = NULL;
 static const bool         UseCRLF       = true;
+#define UBERLOG_NORETURN __declspec(noreturn)
 #else
 static const char         PATH_SLASH = '/';
 typedef void*             proc_handle_t;
@@ -37,24 +38,25 @@ static const shm_handle_t NullShmHandle = -1;
 static const bool         UseCRLF       = false;
 #define _In_z_
 #define _Printf_format_string_
+#define UBERLOG_NORETURN __attribute__((noreturn))
 #endif
 
 class TestHelper;
 
-bool        ProcessCreate(const char* cmd, const char** argv, proc_handle_t& handle, proc_id_t& pid);
-bool        WaitForProcessToDie(proc_handle_t handle, proc_id_t pid, uint32_t milliseconds);
-proc_id_t   GetMyPID();
-proc_id_t   GetMyTID();
-std::string GetMyExePath();
-void        SleepMS(uint32_t ms);
-void        SharedMemObjectName(proc_id_t parentID, const char* logFilename, char shmName[100]);
-bool        SetupSharedMemory(proc_id_t parentID, const char* logFilename, size_t size, bool create, shm_handle_t& shmHandle, void*& shmBuf);
-void        CloseSharedMemory(shm_handle_t shmHandle, void* buf, size_t size);
-size_t      SharedMemSizeFromRingSize(size_t ringBufferSize);
-void        OutOfBandWarning(_In_z_ _Printf_format_string_ const char* msg, ...);
-void        Panic(const char* msg);
-std::string FullPath(const char* relpath);
-uint64_t    siphash24(const void* src, size_t src_sz, const char key[16]);
+bool                  ProcessCreate(const char* cmd, const char** argv, proc_handle_t& handle, proc_id_t& pid);
+bool                  WaitForProcessToDie(proc_handle_t handle, proc_id_t pid, uint32_t milliseconds);
+proc_id_t             GetMyPID();
+proc_id_t             GetMyTID();
+std::string           GetMyExePath();
+void                  SleepMS(uint32_t ms);
+void                  SharedMemObjectName(proc_id_t parentID, const char* logFilename, char shmName[100]);
+bool                  SetupSharedMemory(proc_id_t parentID, const char* logFilename, size_t size, bool create, shm_handle_t& shmHandle, void*& shmBuf);
+void                  CloseSharedMemory(shm_handle_t shmHandle, void* buf, size_t size);
+size_t                SharedMemSizeFromRingSize(size_t ringBufferSize);
+void                  OutOfBandWarning(_In_z_ _Printf_format_string_ const char* msg, ...);
+UBERLOG_NORETURN void Panic(const char* msg);
+std::string           FullPath(const char* relpath);
+uint64_t              siphash24(const void* src, size_t src_sz, const char key[16]);
 
 /* Memory mapped ring buffer.
 To write in two (or more) phases, use WriteNoCommit, each time increasing the

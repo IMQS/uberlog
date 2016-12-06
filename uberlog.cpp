@@ -130,7 +130,7 @@ void DeleteSharedMemory(proc_id_t parentID, const char* logFilename)
 {
 	// not necessary on Windows
 }
-void Panic(const char* msg)
+UBERLOG_NORETURN void Panic(const char* msg)
 {
 	fprintf(stdout, "uberlog panic: %s\n", msg);
 	//fprintf(stderr, "uberlog panic: %s\n", msg);
@@ -248,7 +248,7 @@ void DeleteSharedMemory(proc_id_t parentID, const char* logFilename)
 	SharedMemObjectName(parentID, logFilename, shmName);
 	shm_unlink(shmName);
 }
-__attribute__((noreturn)) void Panic(const char* msg)
+UBERLOG_NORETURN void Panic(const char* msg)
 {
 	fprintf(stdout, "uberlog panic: %s\n", msg);
 	//fprintf(stderr, "uberlog panic: %s\n", msg);
