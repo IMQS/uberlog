@@ -324,7 +324,7 @@ public:
 		if (IsParentDead && Ring.Buf)
 			ReadMessages();
 
-		//tsf::printfmt("Logger slave slept for a total of %v MS\n", totalSleepMS);
+		//tsf::print("Logger slave slept for a total of %v MS\n", totalSleepMS);
 
 		CloseRingBuffer();
 		Log.Close();

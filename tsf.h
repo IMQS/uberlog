@@ -94,7 +94,7 @@ public:
 The only supported characters that you can use are "Q" and "q".
 These were added for escaping SQL identifiers and SQL strings.
 */
-struct fmt_context
+struct context
 {
 	// Return the number of characters written, or -1 if outBufSize is not large enough to hold
 	// the number of characters that you need to write. Do not write a null terminator.
@@ -110,8 +110,8 @@ struct StrLenPair
 	size_t Len;
 };
 
-TSF_FMT_API std::string fmt_core(const fmt_context& context, const char* fmt, ssize_t nargs, const fmtarg* args);
-TSF_FMT_API StrLenPair  fmt_core(const fmt_context& context, const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size);
+TSF_FMT_API std::string fmt_core(const context& context, const char* fmt, ssize_t nargs, const fmtarg* args);
+TSF_FMT_API StrLenPair  fmt_core(const context& context, const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size);
 
 namespace internal {
 
@@ -133,14 +133,28 @@ void fmt_pack(fmtarg* pack, const fmtarg& arg, const Args&... args)
 
 }
 
+// Format and return std::string
 template<typename... Args>
 std::string fmt(const char* fs, const Args&... args)
 {
 	const auto num_args = sizeof...(Args);
 	fmtarg pack_array[num_args + 1]; // +1 for zero args case
 	internal::fmt_pack(pack_array, args...);
-	fmt_context cx;
+	context cx;
 	return fmt_core(cx, fs, (ssize_t) num_args, pack_array);
+}
+
+// If the formatted string, with null terminator, fits inside staticbuf_len, then the returned pointer is staticbuf,
+// and no memory allocation takes place.
+// However, if the formatted string is too large to fit inside staticbuf_len, then the returned pointer must
+// be deleted with "delete[] ptr".
+template<typename... Args>
+StrLenPair fmt_buf(const context& cx, char* buf, size_t buf_len, const char* fs, const Args&... args)
+{
+	const auto num_args = sizeof...(Args);
+	fmtarg pack_array[num_args + 1]; // +1 for zero args case
+	internal::fmt_pack(pack_array, args...);
+	return fmt_core(cx, fs, (ssize_t) num_args, pack_array, buf, buf_len);
 }
 
 // If the formatted string, with null terminator, fits inside staticbuf_len, then the returned pointer is staticbuf,
@@ -150,24 +164,23 @@ std::string fmt(const char* fs, const Args&... args)
 template<typename... Args>
 StrLenPair fmt_buf(char* buf, size_t buf_len, const char* fs, const Args&... args)
 {
-	const auto num_args = sizeof...(Args);
-	fmtarg pack_array[num_args + 1]; // +1 for zero args case
-	internal::fmt_pack(pack_array, args...);
-	fmt_context cx;
-	return fmt_core(cx, fs, (ssize_t) num_args, pack_array, buf, buf_len);
+	context cx;
+	return fmt_buf(cx, buf, buf_len, fs, args...);
 }
 
+// Format and write to FILE*
 template<typename... Args>
-size_t printfmt(FILE* file, const char* fs, const Args&... args)
+size_t print(FILE* file, const char* fs, const Args&... args)
 {
 	auto res = fmt(fs, args...);
 	return fwrite(res.c_str(), 1, res.length(), file);
 }
 
+// Format and write to stdout
 template<typename... Args>
-size_t printfmt(const char* fs, const Args&... args)
+size_t print(const char* fs, const Args&... args)
 {
-	return printfmt(stdout, fs, args...);
+	return print(stdout, fs, args...);
 }
 
 /*  cross-platform "snprintf"

@@ -274,7 +274,7 @@ static inline int fmt_output_with_snprintf(char* outbuf, char fmt_type, char arg
 	return 0;
 }
 
-TSF_FMT_API std::string fmt_core(const fmt_context& context, const char* fmt, ssize_t nargs, const fmtarg* args)
+TSF_FMT_API std::string fmt_core(const context& context, const char* fmt, ssize_t nargs, const fmtarg* args)
 {
 	static const size_t bufsize = 256;
 	char staticbuf[bufsize];
@@ -285,7 +285,7 @@ TSF_FMT_API std::string fmt_core(const fmt_context& context, const char* fmt, ss
 	return str;
 }
 
-TSF_FMT_API StrLenPair fmt_core(const fmt_context& context, const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size)
+TSF_FMT_API StrLenPair fmt_core(const context& context, const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size)
 {
 	if (nargs == 0)
 	{
