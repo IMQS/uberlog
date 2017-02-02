@@ -64,6 +64,7 @@ bool ProcessCreate(const char* cmd, const char** argv, proc_handle_t& handle, pr
 	DWORD flags = 0;
 	//flags |= CREATE_SUSPENDED; // Useful for debugging
 	//flags |= CREATE_NEW_CONSOLE; // Useful for debugging
+	flags |= DETACHED_PROCESS; // When running as a Windows Service, this flag removes the need for a conhost.exe child process to be spun up as a child of uberlogger.exe
 	if (!CreateProcess(NULL, &buf[0], NULL, NULL, false, flags, NULL, NULL, &si, &pi))
 		return false;
 	//ResumeThread(pi.hThread);
