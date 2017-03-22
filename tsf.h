@@ -9,27 +9,42 @@ tsf: A small, typesafe, cross-platform printf replacement (tested on Windows & l
 
 We use snprintf as a backend, so all of the regular formatting
 commands that you expect from the printf family of functions work.
-This also makes the code much smaller than other implementations.
+This makes the code much smaller than other implementations.
+
+We do however implement some of the common operations ourselves,
+such as emitting integers or plain strings, because most snprintf
+implementations are actually very slow, and we can gain a lot of
+speed by doing these common operations ourselves.
 
 Usage:
+
 tsf::fmt("%v %v", "abc", 123)        -->  "abc 123"     <== Use %v as a generic value type
 tsf::fmt("%s %d", "abc", 123)        -->  "abc 123"     <== Specific value types are fine too, unless they conflict with the provided type, in which case they are overridden
 tsf::fmt("%v", std::string("abc"))   -->  "abc"         <== std::string
 tsf::fmt("%v", std::wstring("abc"))  -->  "abc"         <== std::wstring
 tsf::fmt("%.3f", 25.5)               -->  "25.500"      <== Use format strings as usual
+tsf::print("%v", "Hello world")      -->  "Hello world" <== Print to stdout
+tsf::print(stderr, "err %v", 5)      -->  "err 5"       <== Print to stderr (or any other FILE*)
 
 Known unsupported features:
 * Positional arguments
 * %*s (integer width parameter)	-- wouldn't be hard to add. Presently ignored.
 
-fmt() returns std::string.
-fmt_buf() is useful if you want to provide your own buffer to avoid memory allocations.
-printfmt() prints to stdout
-printfmt(FILE*) prints to any FILE*
+API:
+
+fmt           returns std::string.
+fmt_buf       is useful if you want to provide your own buffer to avoid memory allocations.
+print         prints to stdout
+print(FILE*)  prints to any FILE*
 
 By providing a cast operator to fmtarg, you can get an arbitrary type
 supported as an argument, provided it fits into one of the molds of the
 printf family of arguments.
+
+We also support two custom types: %Q and %q. In order to use these, you need to provide your own
+implementation that wraps one of the lower level functions, and provides a 'context' object with
+custom functions defined for Escape_Q and Escape_q. These were originally added in order to provide 
+quoting and escaping for SQL identifiers and SQL string literals.
 
 */
 
@@ -54,6 +69,7 @@ public:
 	enum Types
 	{
 		TNull,	// Used as a sentinel to indicate that no parameter was passed
+		TPtr,
 		TCStr,
 		TWStr,
 		TI32,
@@ -64,6 +80,7 @@ public:
 	};
 	union
 	{
+		const void*		Ptr;
 		const char*		CStr;
 		const wchar_t*	WStr;
 		int32_t			I32;
@@ -75,6 +92,7 @@ public:
 	Types Type;
 
 	fmtarg()								: Type(TNull), CStr(NULL) {}
+	fmtarg(const void* v)					: Type(TPtr), Ptr(v) {}
 	fmtarg(const char* v)					: Type(TCStr), CStr(v) {}
 	fmtarg(const wchar_t* v)				: Type(TWStr), WStr(v) {}
 	fmtarg(const std::string& v)			: Type(TCStr), CStr(v.c_str()) {}

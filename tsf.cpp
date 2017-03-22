@@ -238,6 +238,9 @@ static inline int fmt_output_with_snprintf(char* outbuf, char fmt_type, char arg
 	{
 	case fmtarg::TNull:
 		return 0;
+	case fmtarg::TPtr:
+		SETTYPE1('p');
+		return fmt_snprintf(outbuf, outputSize, argbuf, arg->Ptr);
 	case fmtarg::TCStr:
 		SETTYPE2("", 's');
 		return format_string(outbuf, outputSize, argbuf, arg->CStr);
@@ -265,7 +268,6 @@ static inline int fmt_output_with_snprintf(char* outbuf, char fmt_type, char arg
 		if (tokenreal)	{ SETTYPE1(fmt_type); }
 		else			{ SETTYPE1('g'); }
 		return fmt_snprintf(outbuf, outputSize, argbuf, arg->Dbl);
-		break;
 	}
 
 #undef SETTYPE1
