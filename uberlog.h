@@ -160,6 +160,8 @@ static char LevelChar(Level lev)
 	return 'N';
 }
 
+UBERLOG_API Level ParseLevel(const char* level);
+
 /* A logger
 Use this from your application to write logs. This class will launch the child process
 and setup a memory mapped buffer which is used to communicate with the child process.
@@ -191,6 +193,9 @@ public:
 
 	// Set the log level.
 	void SetLevel(uberlog::Level level);
+
+	// Set the log level from a string. Only the first character is used. See LevelChar() for reference.
+	void SetLevel(const char* level);
 
 	// Low level "write bytes to log file"
 	void LogRaw(const void* data, size_t len);
@@ -271,4 +276,4 @@ private:
 	bool WaitForRingToBeEmpty(uint32_t milliseconds); // Returns true if the ring is empty
 	void LogDefaultFormat_Phase2(uberlog::Level level, tsf::StrLenPair msg, bool buf_is_static);
 };
-}
+} // namespace uberlog

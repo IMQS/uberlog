@@ -152,7 +152,7 @@ bool ProcessCreate(const char* cmd, const char** argv, proc_handle_t& handle, pr
 	else
 	{
 		// child
-		execv(cmd, (char* const *) argv);
+		execv(cmd, (char* const*) argv);
 		// Since we're using vfork, the only thing we're allowed to do now is call  __exit
 		_exit(1);
 		return false; // unreachable
@@ -384,13 +384,13 @@ uint64_t siphash24(const void* src, size_t src_sz, const char key[16])
 	uint8_t* m  = (uint8_t*) in;
 	switch (src_sz)
 	{
-	case 7: pt[6]                 = m[6];
-	case 6: pt[5]                 = m[5];
-	case 5: pt[4]                 = m[4];
+	case 7: pt[6] = m[6];
+	case 6: pt[5] = m[5];
+	case 5: pt[4] = m[4];
 	case 4: *((uint32_t*) &pt[0]) = *((uint32_t*) &m[0]); break;
-	case 3: pt[2]                 = m[2];
-	case 2: pt[1]                 = m[1];
-	case 1: pt[0]                 = m[0];
+	case 3: pt[2] = m[2];
+	case 2: pt[1] = m[1];
+	case 1: pt[0] = m[0];
 	}
 	b |= _le64toh(t);
 
@@ -660,6 +660,35 @@ void TimeKeeper::FormatUintHex(uint32_t ndigit, char* buf, uint32_t v)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
+UBERLOG_API Level ParseLevel(const char* level)
+{
+	switch (level[0])
+	{
+	case 'D':
+	case 'd':
+		return Level::Debug;
+	case 'I':
+	case 'i':
+		return Level::Info;
+	case 'W':
+	case 'w':
+		return Level::Warn;
+	case 'E':
+	case 'e':
+		return Level::Error;
+	case 'F':
+	case 'f':
+		return Level::Fatal;
+	default:
+		OutOfBandWarning("Unrecognized log level '%s'\n", level);
+		return Level::Info;
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+
 Logger::Logger()
 {
 	Level = uberlog::Level::Info;
@@ -724,6 +753,11 @@ void Logger::SetLevel(uberlog::Level level)
 {
 	std::lock_guard<std::mutex> guard(Lock);
 	Level = level;
+}
+
+void Logger::SetLevel(const char* level)
+{
+	SetLevel(ParseLevel(level));
 }
 
 void Logger::LogRaw(const void* data, size_t len)
