@@ -816,11 +816,11 @@ bool Logger::Open()
 	std::string args[nArgs];
 	const char* argv[nArgs + 1];
 	args[0] = uberLoggerPath;
-	args[1] = tsf::fmt("%u", GetMyPID());
-	args[2] = tsf::fmt("%u", RingBufferSize);
+	args[1] = uberlog_tsf::fmt("%u", GetMyPID());
+	args[2] = uberlog_tsf::fmt("%u", RingBufferSize);
 	args[3] = Filename;
-	args[4] = tsf::fmt("%d", MaxFileSize);
-	args[5] = tsf::fmt("%d", MaxNumArchives);
+	args[4] = uberlog_tsf::fmt("%d", MaxFileSize);
+	args[5] = uberlog_tsf::fmt("%d", MaxNumArchives);
 	for (size_t i = 0; i < nArgs; i++)
 		argv[i] = args[i].c_str();
 	argv[nArgs] = nullptr;
@@ -909,7 +909,7 @@ bool Logger::WaitForRingToBeEmpty(uint32_t milliseconds)
 #pragma warning(disable : 6386) // /analyze thinks we might overrun 'buf'
 #endif
 
-void Logger::LogDefaultFormat_Phase2(uberlog::Level level, tsf::StrLenPair msg, bool buf_is_static)
+void Logger::LogDefaultFormat_Phase2(uberlog::Level level, uberlog_tsf::StrLenPair msg, bool buf_is_static)
 {
 	// [------------- 42 characters ------------]
 	// [------ 28 characters -----]

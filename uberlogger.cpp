@@ -324,7 +324,7 @@ public:
 		if (IsParentDead && Ring.Buf)
 			ReadMessages();
 
-		//tsf::print("Logger slave slept for a total of %v MS\n", totalSleepMS);
+		//uberlog_tsf::print("Logger slave slept for a total of %v MS\n", totalSleepMS);
 
 		CloseRingBuffer();
 		Log.Close();
@@ -508,7 +508,7 @@ private:
 	{
 		if (!EnableDebugMessages)
 			return;
-		fputs(tsf::fmt(msg, args...).c_str(), stdout);
+		fputs(uberlog_tsf::fmt(msg, args...).c_str(), stdout);
 	}
 };
 

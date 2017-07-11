@@ -1,13 +1,13 @@
 // For license, see https://github.com/IMQS/tsf
-#ifndef TSF_CPP_INCLUDED
-#define TSF_CPP_INCLUDED
+#ifndef UBERLOG_TSF_CPP_INCLUDED
+#define UBERLOG_TSF_CPP_INCLUDED
 
 #include "tsf.h"
 #include <assert.h>
 #include <string.h>
 #include <stdint.h>
 
-namespace tsf {
+namespace uberlog_tsf {
 
 static const size_t argbuf_arraysize = 16;
 
@@ -276,7 +276,7 @@ static inline int fmt_output_with_snprintf(char* outbuf, char fmt_type, char arg
 	return 0;
 }
 
-TSF_FMT_API std::string fmt_core(const context& context, const char* fmt, ssize_t nargs, const fmtarg* args)
+UBERLOG_TSF_FMT_API std::string fmt_core(const context& context, const char* fmt, ssize_t nargs, const fmtarg* args)
 {
 	static const size_t bufsize = 256;
 	char staticbuf[bufsize];
@@ -287,7 +287,7 @@ TSF_FMT_API std::string fmt_core(const context& context, const char* fmt, ssize_
 	return str;
 }
 
-TSF_FMT_API StrLenPair fmt_core(const context& context, const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size)
+UBERLOG_TSF_FMT_API StrLenPair fmt_core(const context& context, const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size)
 {
 	if (nargs == 0)
 	{
@@ -450,7 +450,7 @@ static inline int fmt_translate_snprintf_return_value(int r, size_t count)
 		return r;
 }
 
-TSF_FMT_API int fmt_snprintf(char* destination, size_t count, const char* format_str, ...)
+UBERLOG_TSF_FMT_API int fmt_snprintf(char* destination, size_t count, const char* format_str, ...)
 {
 	va_list va;
 	va_start(va, format_str);
@@ -459,6 +459,6 @@ TSF_FMT_API int fmt_snprintf(char* destination, size_t count, const char* format
 	return fmt_translate_snprintf_return_value(r, count);
 }
 
-} // namespace tsf
+} // namespace uberlog_tsf
 
 #endif

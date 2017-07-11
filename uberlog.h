@@ -213,7 +213,7 @@ public:
 		const size_t statbufsize = 200;
 		char         statbuf[statbufsize];
 
-		tsf::StrLenPair msg = tsf::fmt_buf(statbuf + 42, statbufsize - 42 - EolLen, format_str, args...);
+		uberlog_tsf::StrLenPair msg = uberlog_tsf::fmt_buf(statbuf + 42, statbufsize - 42 - EolLen, format_str, args...);
 
 		// Split this into two phases, to reduce the amount of code in the header
 		LogDefaultFormat_Phase2(level, msg, msg.Str == statbuf + 42);
@@ -274,6 +274,6 @@ private:
 	bool CreateRingBuffer();
 	void CloseRingBuffer();
 	bool WaitForRingToBeEmpty(uint32_t milliseconds); // Returns true if the ring is empty
-	void LogDefaultFormat_Phase2(uberlog::Level level, tsf::StrLenPair msg, bool buf_is_static);
+	void LogDefaultFormat_Phase2(uberlog::Level level, uberlog_tsf::StrLenPair msg, bool buf_is_static);
 };
 } // namespace uberlog

@@ -1,7 +1,8 @@
 // For license, see https://github.com/IMQS/tsf
+// For uberlog, tsf namespace is changed to uberlog_tsf, to avoid version conflicts when using tsf in the same project.
 #pragma once
-#ifndef TSF_H_INCLUDED
-#define TSF_H_INCLUDED
+#ifndef UBERLOG_TSF_H_INCLUDED
+#define UBERLOG_TSF_H_INCLUDED
 
 /*
 
@@ -53,15 +54,15 @@ quoting and escaping for SQL identifiers and SQL string literals.
 typedef SSIZE_T ssize_t;
 #endif
 
-#ifndef TSF_FMT_API
-#define TSF_FMT_API
+#ifndef UBERLOG_TSF_FMT_API
+#define UBERLOG_TSF_FMT_API
 #endif
 
 #include <stdarg.h>
 #include <stdint.h>
 #include <string>
 
-namespace tsf {
+namespace uberlog_tsf {
 
 class fmtarg
 {
@@ -128,8 +129,8 @@ struct StrLenPair
 	size_t Len;
 };
 
-TSF_FMT_API std::string fmt_core(const context& context, const char* fmt, ssize_t nargs, const fmtarg* args);
-TSF_FMT_API StrLenPair  fmt_core(const context& context, const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size);
+UBERLOG_TSF_FMT_API std::string fmt_core(const context& context, const char* fmt, ssize_t nargs, const fmtarg* args);
+UBERLOG_TSF_FMT_API StrLenPair  fmt_core(const context& context, const char* fmt, ssize_t nargs, const fmtarg* args, char* staticbuf, size_t staticbuf_size);
 
 namespace internal {
 
@@ -210,8 +211,8 @@ size_t print(const char* fs, const Args&... args)
 		-1				Not enough space
 		0..count-1		Number of characters written, excluding the null terminator. The null terminator was written though.
 */
-TSF_FMT_API int fmt_snprintf(char* destination, size_t count, const char* format_str, ...);
+UBERLOG_TSF_FMT_API int fmt_snprintf(char* destination, size_t count, const char* format_str, ...);
 
-} // namespace tsf
+} // namespace uberlog_tsf
 
 #endif
