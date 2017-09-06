@@ -102,8 +102,9 @@ bool SetupSharedMemory(proc_id_t parentID, const char* logFilename, size_t size,
 {
 	char shmName[100];
 	SharedMemObjectName(parentID, logFilename, shmName);
+	// The cast of 'size' up to 64-bits is only necessary on 32-bit platforms, but it is indeed necessary, at least on MSVC 2015 (undefined behaviour, specifically)
 	if (create)
-		shmHandle = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, (DWORD)(size >> 32), (DWORD) size, shmName);
+		shmHandle = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, (DWORD)((uint64_t) size >> 32), (DWORD) size, shmName);
 	else
 		shmHandle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, false, shmName);
 

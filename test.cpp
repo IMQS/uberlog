@@ -131,7 +131,7 @@ std::string MakeMsg(int len, int seed = 0)
 			x += "\n";
 	}
 	x += "\n";
-	if (x.length() > len)
+	if (x.length() > (size_t) len)
 		x.erase(x.begin() + len);
 	return x;
 }
@@ -166,8 +166,8 @@ public:
 		memcpy(log._Test_OverridePrefix, prefix, 42);
 	}
 };
-}
-}
+} // namespace internal
+} // namespace uberlog
 using namespace uberlog::internal;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -243,9 +243,9 @@ void TestRingBuffer()
 
 struct Stats
 {
-	double Mean = 0;
+	double Mean   = 0;
 	double StdDev = 0;
-	double CV = 0;			// https://en.wikipedia.org/wiki/Coefficient_of_variation
+	double CV     = 0; // https://en.wikipedia.org/wiki/Coefficient_of_variation
 
 	static Stats Compute(const std::vector<double>& samples)
 	{
@@ -253,15 +253,15 @@ struct Stats
 		for (auto s : samples)
 			mean += s;
 		mean /= (double) samples.size();
-		
+
 		double var = 0;
 		for (auto s : samples)
 			var += (s - mean) * (s - mean);
 		var /= (double) samples.size() - 1;
 		Stats st;
-		st.Mean = mean;
+		st.Mean   = mean;
 		st.StdDev = sqrt(var);
-		st.CV = st.StdDev / st.Mean;
+		st.CV     = st.StdDev / st.Mean;
 		return st;
 	}
 };
@@ -301,9 +301,9 @@ void BenchThroughput()
 
 double BenchSpdCompare()
 {
-	int nmsg = 1000000;
+	int           nmsg = 1000000;
 	LogOpenCloser oc(1024 * 1024, 5 * 1024 * 1024);
-	double start = AccurateTimeSeconds();
+	double        start = AccurateTimeSeconds();
 	for (int i = 0; i < nmsg; i++)
 		oc.Log.Info("uberlog message %v: This is some text for your pleasure", i);
 	return AccurateTimeSeconds() - start;
@@ -322,7 +322,7 @@ double BenchLoggerLatency(Modes mode)
 	LogOpenCloser oc(32768 * 1024, 500 * 1024 * 1024);
 
 	size_t warmup = 100;
-	size_t count = 50000;
+	size_t count  = 50000;
 
 	std::string staticMsg = "This is a message of a similar length, but it is a static string, so no formatting or time";
 
@@ -352,7 +352,7 @@ void BenchFileWriteLatency()
 #endif
 
 	size_t warmup = 100;
-	size_t count = 200000;
+	size_t count  = 200000;
 
 	double start = 0;
 	for (size_t i = 0; i < warmup + count; i++)
@@ -366,7 +366,7 @@ void BenchFileWriteLatency()
 #endif
 	}
 	double end = AccurateTimeSeconds();
-	tsf::printfmt("ns per disk write: %v\n", 1000000000 * (end - start) / count);
+	uberlog_tsf::print("ns per disk write: %v\n", 1000000000 * (end - start) / count);
 
 #ifdef _WIN32
 	CloseHandle(fd);
@@ -379,12 +379,12 @@ void HelloWorld()
 {
 	uberlog::Logger l;
 	l.Open("hello.log");
-	l.Info("Hello!");	
+	l.Info("Hello!");
 }
 
 void TestAll()
 {
-	//HelloWorld();
+	HelloWorld();
 	Bench("raw log", "ns", []() { return BenchLoggerLatency(ModeRaw); }, 10);
 	Bench("simple fmt log", "ns", []() { return BenchLoggerLatency(ModeSimpleFmt); }, 10);
 	Bench("param fmt log", "ns", []() { return BenchLoggerLatency(ModeParamFmt); }, 10);

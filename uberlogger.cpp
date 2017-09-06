@@ -232,7 +232,7 @@ private:
 
 		// delete old archives, but ignore failure
 		auto archives = FindArchiveFiles();
-		if (archives.size() > MaxNumArchiveFiles)
+		if (archives.size() > (size_t) MaxNumArchiveFiles)
 		{
 			for (size_t i = 0; i < archives.size() - MaxNumArchiveFiles; i++)
 				remove(archives[i].c_str());
@@ -519,8 +519,8 @@ Normally, you do not launch uberlogger manually. It is launched automatically by
 uberlogger <parentpid> <ringsize> <logfilename> <maxlogsize> <maxarchives>)";
 	printf("%s\n", help);
 }
-}
-} // namespace uberlog::internal
+} // namespace internal
+} // namespace uberlog
 
 int main(int argc, char** argv)
 {
