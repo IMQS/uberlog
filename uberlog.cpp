@@ -3,6 +3,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+//#define UNICODE
 #include <windows.h>
 #include <sys/types.h>
 #else
@@ -48,7 +49,7 @@ namespace internal {
 #ifdef _WIN32
 bool ProcessCreate(const char* cmd, const char** argv, proc_handle_t& handle, proc_id_t& pid)
 {
-	STARTUPINFO         si;
+	STARTUPINFOA        si;
 	PROCESS_INFORMATION pi;
 	memset(&si, 0, sizeof(si));
 	memset(&pi, 0, sizeof(pi));
@@ -65,7 +66,7 @@ bool ProcessCreate(const char* cmd, const char** argv, proc_handle_t& handle, pr
 	//flags |= CREATE_SUSPENDED; // Useful for debugging
 	//flags |= CREATE_NEW_CONSOLE; // Useful for debugging
 	flags |= DETACHED_PROCESS; // When running as a Windows Service, this flag removes the need for a conhost.exe child process to be spun up as a child of uberlogger.exe
-	if (!CreateProcess(NULL, &buf[0], NULL, NULL, false, flags, NULL, NULL, &si, &pi))
+	if (!CreateProcessA(NULL, &buf[0], NULL, NULL, false, flags, NULL, NULL, &si, &pi))
 		return false;
 	//ResumeThread(pi.hThread);
 	CloseHandle(pi.hThread);
@@ -540,7 +541,7 @@ TimeKeeper::TimeKeeper()
 	ftime(&t1);
 	TimezoneMinutes = t1.timezone;
 
-	auto kernel = GetModuleHandle("kernel32.dll");
+	auto kernel = GetModuleHandleA("kernel32.dll");
 	if (!kernel)
 		Panic("Unable to get kernel32.dll handle");
 	__GetSystemTimePreciseAsFileTime = (decltype(__GetSystemTimePreciseAsFileTime)) GetProcAddress(kernel, "GetSystemTimePreciseAsFileTime");

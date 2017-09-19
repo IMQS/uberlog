@@ -1,6 +1,7 @@
 #ifdef _WIN32
 #define _CRT_SECURE_NO_WARNINGS 1
 #define NOMINMAX
+//#define UNICODE
 #include <windows.h>
 #include <io.h>
 #else

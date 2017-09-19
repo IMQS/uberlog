@@ -8,6 +8,7 @@ into the log file.
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+//#define UNICODE
 #include <windows.h>
 #include <io.h>
 #include <fcntl.h>
@@ -194,14 +195,14 @@ private:
 		auto                     wildcard = Filename.substr(0, Filename.length() - ext.length()) + "-*";
 		std::vector<std::string> archives;
 #ifdef _WIN32
-		WIN32_FIND_DATA fd;
-		HANDLE          fh = FindFirstFileA(wildcard.c_str(), &fd);
+		WIN32_FIND_DATAA fd;
+		HANDLE           fh = FindFirstFileA(wildcard.c_str(), &fd);
 		if (fh != INVALID_HANDLE_VALUE)
 		{
 			do
 			{
 				archives.push_back(dir + fd.cFileName);
-			} while (!!FindNextFile(fh, &fd));
+			} while (!!FindNextFileA(fh, &fd));
 			FindClose(fh);
 		}
 #else
