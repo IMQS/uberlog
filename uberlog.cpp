@@ -111,13 +111,19 @@ bool SetupSharedMemory(proc_id_t parentID, const char* logFilename, size_t size,
 
 	if (shmHandle == NULL)
 	{
-		OutOfBandWarning("uberlog: %s failed: %u\n", create ? "CreateFileMapping" : "OpenFileMapping", GetLastError());
+      char buf[256];
+      FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, NULL, GetLastError(),
+         MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buf, sizeof(buf), NULL);
+		OutOfBandWarning("uberlog: %s failed: %u  %s\n", create ? "CreateFileMapping" : "OpenFileMapping", GetLastError(), buf);
 		return false;
 	}
 	shmBuf = MapViewOfFile(shmHandle, FILE_MAP_ALL_ACCESS, 0, 0, size);
 	if (!shmBuf)
 	{
-		OutOfBandWarning("uberlog: MapViewOfFile failed: %u\n", GetLastError());
+      char buf[256];
+      FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, NULL, GetLastError(),
+         MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buf, sizeof(buf), NULL);
+      OutOfBandWarning("uberlog: MapViewOfFile failed: %u  %s\n", GetLastError(), buf);
 		CloseHandle(shmHandle);
 		shmHandle = NULL;
 		return false;
@@ -829,7 +835,11 @@ bool Logger::Open()
 
 	if (!ProcessCreate(uberLoggerPath.c_str(), argv, HChildProcess, ChildPID))
 	{
-		OutOfBandWarning("Unable to start uberlogger process\n");
+      char buf[256];
+      FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, NULL, GetLastError(),
+         MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buf, sizeof(buf), NULL);
+
+		OutOfBandWarning("Unable to start uberlogger process. Errno %u    %s\n", GetLastError(), buf);
 		CloseRingBuffer();
 		return false;
 	}
