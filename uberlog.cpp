@@ -47,6 +47,15 @@ namespace internal {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #ifdef _WIN32
+std::string FormatWindowsError(DWORD msgId)
+{
+	char buf[512];
+	buf[0] = 0;
+	if (FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, NULL, msgId, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buf, sizeof(buf), NULL) == 0)
+		return "Unknown error";
+	buf[sizeof(buf) - 1] = 0;
+	return buf;
+}
 bool ProcessCreate(const char* cmd, const char** argv, proc_handle_t& handle, proc_id_t& pid)
 {
 	STARTUPINFOA        si;
@@ -111,19 +120,13 @@ bool SetupSharedMemory(proc_id_t parentID, const char* logFilename, size_t size,
 
 	if (shmHandle == NULL)
 	{
-      char buf[256];
-      FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, NULL, GetLastError(),
-         MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buf, sizeof(buf), NULL);
-		OutOfBandWarning("uberlog: %s failed: %u  %s\n", create ? "CreateFileMapping" : "OpenFileMapping", GetLastError(), buf);
+		OutOfBandWarning("uberlog: %s failed: %u, %s\n", create ? "CreateFileMapping" : "OpenFileMapping", GetLastError(), FormatWindowsError(GetLastError()).c_str());
 		return false;
 	}
 	shmBuf = MapViewOfFile(shmHandle, FILE_MAP_ALL_ACCESS, 0, 0, size);
 	if (!shmBuf)
 	{
-      char buf[256];
-      FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, NULL, GetLastError(),
-         MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buf, sizeof(buf), NULL);
-      OutOfBandWarning("uberlog: MapViewOfFile failed: %u  %s\n", GetLastError(), buf);
+		OutOfBandWarning("uberlog: MapViewOfFile failed: %u, %s\n", GetLastError(), FormatWindowsError(GetLastError()).c_str());
 		CloseHandle(shmHandle);
 		shmHandle = NULL;
 		return false;
@@ -835,11 +838,7 @@ bool Logger::Open()
 
 	if (!ProcessCreate(uberLoggerPath.c_str(), argv, HChildProcess, ChildPID))
 	{
-      char buf[256];
-      FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, NULL, GetLastError(),
-         MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buf, sizeof(buf), NULL);
-
-		OutOfBandWarning("Unable to start uberlogger process. Errno %u    %s\n", GetLastError(), buf);
+		OutOfBandWarning("Unable to start uberlogger process: %u, %s\n", GetLastError(), FormatWindowsError(GetLastError()).c_str());
 		CloseRingBuffer();
 		return false;
 	}
