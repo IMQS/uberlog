@@ -179,6 +179,7 @@ public:
 	~Logger();
 
 	void Open(const char* filename);
+	void OpenStdOut(); // Open, but do not write to a log file. Just write to stdout. This is typically used when running unit tests.
 	void Close();
 
 	// Set the ring buffer size, which is used to communicate between
@@ -258,6 +259,7 @@ private:
 	uint32_t                    TimeoutChildProcessInitMS = 10000; // Time we wait for our child process to come alive
 	const int                   EolLen                    = uberlog::internal::UseCRLF ? 2 : 1;
 	bool                        IsOpen                    = false;
+	bool                        IsStdOutMode              = false;
 	std::atomic<uberlog::Level> Level;
 	std::mutex                  Lock; // Guards access to all public functions
 	internal::TimeKeeper        TK;

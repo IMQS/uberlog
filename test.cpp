@@ -242,6 +242,13 @@ void TestRingBuffer()
 	}
 }
 
+void TestStdOut()
+{
+	uberlog::Logger l;
+	l.OpenStdOut();
+	l.Info("straight to stdout");
+}
+
 struct Stats
 {
 	double Mean   = 0;
@@ -395,6 +402,7 @@ void TestAll()
 	TestProcessLifecycle();
 	TestFormattedWrite();
 	TestRingBuffer();
+	TestStdOut();
 }
 
 #ifdef _WIN32

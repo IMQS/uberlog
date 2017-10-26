@@ -717,11 +717,23 @@ void Logger::Open(const char* filename)
 	Open();
 }
 
+void Logger::OpenStdOut()
+{
+	std::lock_guard<std::mutex> guard(Lock);
+	IsStdOutMode = true;
+	IsOpen       = true;
+}
+
 void Logger::Close()
 {
 	std::lock_guard<std::mutex> guard(Lock);
 	if (!IsOpen)
 		return;
+	if (IsStdOutMode)
+	{
+		IsOpen = false;
+		return;
+	}
 
 	// Always wait 10 seconds for our child to exit.
 	// Waiting is nice behaviour, because the caller knows that he can manipulate the log file after Close() returns.
@@ -777,6 +789,11 @@ void Logger::LogRaw(const void* data, size_t len)
 	if (!IsOpen)
 	{
 		OutOfBandWarning("Logger.LogRaw called but log is not open\n");
+		return;
+	}
+	if (IsStdOutMode)
+	{
+		fwrite(data, len, 1, stdout);
 		return;
 	}
 
