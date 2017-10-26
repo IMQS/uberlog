@@ -76,7 +76,10 @@ bool ProcessCreate(const char* cmd, const char** argv, proc_handle_t& handle, pr
 	//flags |= CREATE_NEW_CONSOLE; // Useful for debugging
 	flags |= DETACHED_PROCESS; // When running as a Windows Service, this flag removes the need for a conhost.exe child process to be spun up as a child of uberlogger.exe
 	if (!CreateProcessA(NULL, &buf[0], NULL, NULL, false, flags, NULL, NULL, &si, &pi))
+	{
+		OutOfBandWarning("uberlog: Unable to start child process: %u, %s\n", GetLastError(), FormatWindowsError(GetLastError()).c_str());
 		return false;
+	}
 	//ResumeThread(pi.hThread);
 	CloseHandle(pi.hThread);
 	handle = pi.hProcess;
@@ -153,7 +156,10 @@ bool ProcessCreate(const char* cmd, const char** argv, proc_handle_t& handle, pr
 {
 	pid_t childid = vfork();
 	if (childid == -1)
+	{
+		OutOfBandWarning("uberlog: Unable to start child process: %d\n", errno);
 		return false;
+	}
 	if (childid != 0)
 	{
 		// parent
@@ -855,7 +861,6 @@ bool Logger::Open()
 
 	if (!ProcessCreate(uberLoggerPath.c_str(), argv, HChildProcess, ChildPID))
 	{
-		OutOfBandWarning("Unable to start uberlogger process: %u, %s\n", GetLastError(), FormatWindowsError(GetLastError()).c_str());
 		CloseRingBuffer();
 		return false;
 	}
