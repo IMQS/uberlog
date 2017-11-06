@@ -30,6 +30,7 @@
 #ifdef _WIN32
 #define ftime _ftime
 #define timeb _timeb
+#define fileno _fileno
 #endif
 
 #ifdef _MSC_VER
@@ -148,6 +149,7 @@ void DeleteSharedMemory(proc_id_t parentID, const char* logFilename)
 UBERLOG_NORETURN void Panic(const char* msg)
 {
 	fprintf(stdout, "uberlog panic: %s\n", msg);
+	fflush(stdout);
 	//fprintf(stderr, "uberlog panic: %s\n", msg);
 	*((int*) 0) = 1;
 }
@@ -269,6 +271,7 @@ void DeleteSharedMemory(proc_id_t parentID, const char* logFilename)
 UBERLOG_NORETURN void Panic(const char* msg)
 {
 	fprintf(stdout, "uberlog panic: %s\n", msg);
+	fflush(stdout);
 	//fprintf(stderr, "uberlog panic: %s\n", msg);
 	__builtin_trap();
 }
@@ -306,6 +309,7 @@ void OutOfBandWarning(_In_z_ _Printf_format_string_ const char* msg, ...)
 	va_start(va, msg);
 	vfprintf(stdout, msg, va);
 	va_end(va);
+	fflush(stdout);
 
 	//va_start(va, msg);
 	//vfprintf(stderr, msg, va);
@@ -326,10 +330,10 @@ std::string FullPath(const char* relpath)
 	return copy;
 }
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////////////
-// This siphash implementation is from https://github.com/majek/csiphash
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// This siphash implementation is from https://github.com/majek/csiphash
 
 #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
     __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -708,7 +712,8 @@ UBERLOG_API Level ParseLevel(const char* level)
 
 Logger::Logger()
 {
-	Level = uberlog::Level::Info;
+	Level     = uberlog::Level::Info;
+	TeeStdOut = false;
 }
 
 Logger::~Logger()
@@ -799,9 +804,12 @@ void Logger::LogRaw(const void* data, size_t len)
 	}
 	if (IsStdOutMode)
 	{
-		fwrite(data, len, 1, stdout);
+		if (StdOutFD >= 0)
+			write(StdOutFD, data, len);
 		return;
 	}
+	if (TeeStdOut && StdOutFD >= 0)
+		write(StdOutFD, data, len);
 
 	size_t maxLen = Ring.MaxAvailableForWrite() - sizeof(MessageHead);
 
@@ -839,6 +847,8 @@ bool Logger::Open()
 
 	if (!CreateRingBuffer())
 		return false;
+
+	StdOutFD = fileno(stdout);
 
 	std::string uberLoggerPath = "uberlogger";
 	auto        myPath         = GetMyExePath();

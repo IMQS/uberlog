@@ -175,6 +175,11 @@ class UBERLOG_API Logger
 public:
 	friend uberlog::internal::TestHelper;
 
+	// If true, then send all logs to stdout as well as their usual destination.
+	// If OpenStdOut() is used to open the log, then this value has no effect.
+	// Default = false.
+	std::atomic<bool> TeeStdOut;
+
 	Logger();
 	~Logger();
 
@@ -260,6 +265,7 @@ private:
 	const int                   EolLen                    = uberlog::internal::UseCRLF ? 2 : 1;
 	bool                        IsOpen                    = false;
 	bool                        IsStdOutMode              = false;
+	int                         StdOutFD                  = -1;
 	std::atomic<uberlog::Level> Level;
 	std::mutex                  Lock; // Guards access to all public functions
 	internal::TimeKeeper        TK;
