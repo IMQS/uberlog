@@ -6,6 +6,7 @@
 //#define UNICODE
 #include <windows.h>
 #include <sys/types.h>
+#include <io.h>
 #else
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -31,6 +32,7 @@
 #define ftime _ftime
 #define timeb _timeb
 #define fileno _fileno
+#define write _write
 #endif
 
 #ifdef _MSC_VER
@@ -330,10 +332,10 @@ std::string FullPath(const char* relpath)
 	return copy;
 }
 
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// This siphash implementation is from https://github.com/majek/csiphash
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+// This siphash implementation is from https://github.com/majek/csiphash
 
 #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
     __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -805,11 +807,11 @@ void Logger::LogRaw(const void* data, size_t len)
 	if (IsStdOutMode)
 	{
 		if (StdOutFD >= 0)
-			write(StdOutFD, data, len);
+			write(StdOutFD, data, (unsigned) len);
 		return;
 	}
 	if (TeeStdOut && StdOutFD >= 0)
-		write(StdOutFD, data, len);
+		write(StdOutFD, data, (unsigned) len);
 
 	size_t maxLen = Ring.MaxAvailableForWrite() - sizeof(MessageHead);
 
