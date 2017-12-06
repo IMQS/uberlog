@@ -187,6 +187,8 @@ public:
 	void OpenStdOut(); // Open, but do not write to a log file. Just write to stdout. This is typically used when running unit tests.
 	void Close();
 
+	std::string GetFilename() const { return Filename; }
+
 	// Set the ring buffer size, which is used to communicate between
 	// the main process and the log writer process. This must be called
 	// before Open(). This has no effect if called after Open() has been called.
