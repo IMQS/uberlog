@@ -100,9 +100,12 @@ public:
 	fmtarg(const std::wstring& v)			: Type(TWStr), WStr(v.c_str()) {}
 	fmtarg(int32_t v)						: Type(TI32), I32(v) {}
 	fmtarg(uint32_t v)						: Type(TU32), UI32(v) {}
-#ifdef _MSC_VER
+#if LONG_MAX == 2147483647
 	fmtarg(long v)							: Type(TI32), I32(v) {}
 	fmtarg(unsigned long v)					: Type(TU32), UI32(v) {}
+#else
+	fmtarg(long v)							: Type(TI64), I64(v) {}
+	fmtarg(unsigned long v)					: Type(TU64), UI64(v) {}
 #endif
 	fmtarg(int64_t v)						: Type(TI64), I64(v) {}
 	fmtarg(uint64_t v)						: Type(TU64), UI64(v) {}

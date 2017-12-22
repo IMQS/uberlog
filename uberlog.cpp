@@ -13,10 +13,17 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/syscall.h>
-#include <linux/unistd.h>
 #include <time.h>
 #include <fcntl.h>
 #include <unistd.h>
+#endif
+
+#ifdef __linux__
+#include <linux/unistd.h>
+#endif
+
+#ifdef __APPLE__
+#include <libproc.h>
 #endif
 
 #include <algorithm>
@@ -161,7 +168,7 @@ bool ProcessCreate(const char* cmd, const char** argv, proc_handle_t& handle, pr
 	pid_t childid = vfork();
 	if (childid == -1)
 	{
-		OutOfBandWarning("uberlog: Unable to start child process: %d\n", errno);
+		OutOfBandWarning("uberlog: Unable to start child process: %s\n", strerror(errno));
 		return false;
 	}
 	if (childid != 0)
@@ -201,15 +208,30 @@ proc_id_t GetMyPID()
 }
 proc_id_t GetMyTID()
 {
+#ifdef __APPLE__
+	//return syscall(SYS_thread_selfid); // syscall is deprecated as of 10.12
+	uint64_t tid = 0;
+	pthread_threadid_np(NULL, &tid);
+	return (proc_id_t) tid;
+#else
 	return syscall(__NR_gettid);
+#endif
 }
 std::string GetMyExePath()
 {
+#ifdef __APPLE__
+	char buf[PROC_PIDPATHINFO_MAXSIZE];
+	buf[0] = 0;
+	int r  = proc_pidpath(getpid(), buf, sizeof(buf));
+	if (r == -1)
+		return buf;
+#else
 	char buf[4096];
 	buf[0]   = 0;
 	size_t r = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
 	if (r == -1)
 		return buf;
+#endif
 
 	if (r < sizeof(buf))
 		buf[r] = 0;
@@ -236,14 +258,14 @@ bool SetupSharedMemory(proc_id_t parentID, const char* logFilename, size_t size,
 
 	if (shmHandle == -1)
 	{
-		OutOfBandWarning("uberlog: shm_open(%s) failed: %d\n", create ? "create" : "open", errno);
+		OutOfBandWarning("uberlog: shm_open(%s) failed: %s\n", create ? "create" : "open", strerror(errno));
 		return false;
 	}
 	if (create)
 	{
 		if (ftruncate(shmHandle, size) != 0)
 		{
-			OutOfBandWarning("uberlog: ftruncate on shm failed: %d\n", errno);
+			OutOfBandWarning("uberlog: ftruncate on shm failed: %s\n", strerror(errno));
 			close(shmHandle);
 			shmHandle = -1;
 			return false;
@@ -252,7 +274,7 @@ bool SetupSharedMemory(proc_id_t parentID, const char* logFilename, size_t size,
 	shmBuf = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, shmHandle, 0);
 	if (shmBuf == (void*) -1)
 	{
-		OutOfBandWarning("uberlog: mmap failed: %d\n", errno);
+		OutOfBandWarning("uberlog: mmap failed: %s\n", strerror(errno));
 		close(shmHandle);
 		shmHandle = -1;
 		return false;
@@ -284,10 +306,14 @@ void SharedMemObjectName(proc_id_t parentID, const char* logFilename, char shmNa
 	char key1[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
 	char key2[16] = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1};
 	memcpy(key1, &parentID, sizeof(parentID));
+	memcpy(key2, &parentID, sizeof(parentID));
 	uint64_t h1 = siphash24(logFilename, strlen(logFilename), key1);
 	uint64_t h2 = siphash24(logFilename, strlen(logFilename), key2);
 #ifdef _WIN32
 	sprintf(shmName, "uberlog-shm-%u-%08x%08x%08x%08x", parentID, (uint32_t)(h1 >> 32), (uint32_t) h1, (uint32_t)(h2 >> 32), (uint32_t) h2);
+#elif __APPLE__
+	// The constant PSHMNAMLEN is 31 on OSX, so we need to Think Different here
+	sprintf(shmName, "/uber%08x%08x%08x", (uint32_t)(h1 >> 32), (uint32_t) h1, (uint32_t) h2);
 #else
 	sprintf(shmName, "/uberlog-shm-%u-%08x%08x%08x%08x", parentID, (uint32_t)(h1 >> 32), (uint32_t) h1, (uint32_t)(h2 >> 32), (uint32_t) h2);
 #endif

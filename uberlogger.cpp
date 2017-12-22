@@ -27,6 +27,16 @@ into the log file.
 #include <time.h>
 #endif
 
+#ifdef __APPLE__
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/fcntl.h>
+#include <unistd.h>
+#include <glob.h>
+#include <time.h>
+#define lseek64 lseek
+#endif
+
 #include <string.h>
 #include <string>
 #include <vector>

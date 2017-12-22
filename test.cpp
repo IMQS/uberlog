@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <string.h>
+#include <math.h>
 #include "uberlog.h"
 
 void Die(const char* file, int line, const char* msg)
@@ -397,7 +398,7 @@ void TestAll()
 	Bench("simple fmt log", "ns", []() { return BenchLoggerLatency(ModeSimpleFmt); }, 10);
 	Bench("param fmt log", "ns", []() { return BenchLoggerLatency(ModeParamFmt); }, 10);
 	Bench("spd comparison", "s", BenchSpdCompare);
-	//BenchFileWriteLatency();
+	BenchFileWriteLatency();
 	BenchThroughput();
 	TestProcessLifecycle();
 	TestFormattedWrite();
