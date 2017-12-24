@@ -248,8 +248,9 @@ static inline int fmt_output_with_snprintf(char* outbuf, char fmt_type, char arg
 		SETTYPE2(wcharPrefix, wcharType);
 		return fmt_snprintf(outbuf, outputSize, argbuf, arg->WStr);
 	case fmtarg::TI32:
-		if (tokenint)	{ SETTYPE2("", fmt_type); }
-		else			{ SETTYPE2("", 'd'); }
+		if (fmt_type == 'c')	{ SETTYPE2("", 'c'); }
+		else if (tokenint)		{ SETTYPE2("", fmt_type); }
+		else					{ SETTYPE2("", 'd'); }
 		return format_int32(outbuf, outputSize, argbuf, arg->I32);
 	case fmtarg::TU32:
 		if (tokenint)	{ SETTYPE2("", fmt_type); }

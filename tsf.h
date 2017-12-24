@@ -98,17 +98,26 @@ public:
 	fmtarg(const wchar_t* v)				: Type(TWStr), WStr(v) {}
 	fmtarg(const std::string& v)			: Type(TCStr), CStr(v.c_str()) {}
 	fmtarg(const std::wstring& v)			: Type(TWStr), WStr(v.c_str()) {}
-	fmtarg(int32_t v)						: Type(TI32), I32(v) {}
-	fmtarg(uint32_t v)						: Type(TU32), UI32(v) {}
-#if LONG_MAX == 2147483647
+#ifdef _MSC_VER
 	fmtarg(long v)							: Type(TI32), I32(v) {}
 	fmtarg(unsigned long v)					: Type(TU32), UI32(v) {}
+	fmtarg(__int32 v)						: Type(TI32), I32(v) {}
+	fmtarg(unsigned __int32 v)				: Type(TU32), UI32(v) {}
+	fmtarg(__int64 v)						: Type(TI64), I64(v) {}
+	fmtarg(unsigned __int64 v)				: Type(TU64), UI64(v) {}
+#else
+	fmtarg(int v)							: Type(TI32), I32(v) {}
+	fmtarg(unsigned int v)					: Type(TU32), UI32(v) {}
+#if LONG_MAX == 0x7fffffff
+	fmtarg(long v)							: Type(TI32), I32(v) {}
+	fmtarg(unsigned long v)					: Type(TU32), UI32(v) {}
+	fmtarg(int64_t v)						: Type(TI64), I64(v) {}
+	fmtarg(uint64_t v)						: Type(TU64), UI64(v) {}
 #else
 	fmtarg(long v)							: Type(TI64), I64(v) {}
 	fmtarg(unsigned long v)					: Type(TU64), UI64(v) {}
 #endif
-	fmtarg(int64_t v)						: Type(TI64), I64(v) {}
-	fmtarg(uint64_t v)						: Type(TU64), UI64(v) {}
+#endif
 	fmtarg(double v)						: Type(TDbl), Dbl(v) {}
 };
 
