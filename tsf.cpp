@@ -12,13 +12,13 @@ namespace uberlog_tsf {
 static const size_t argbuf_arraysize = 16;
 
 #ifdef _WIN32
-	const char* i64Prefix = "I64";
-	const char* wcharPrefix = "";
-	const char wcharType = 'S';
+	static const char* i64Prefix = "I64";
+	static const char* wcharPrefix = "";
+	static const char wcharType = 'S';
 #else
-	const char* i64Prefix = "ll";
-	const char* wcharPrefix = "l";
-	const char wcharType = 's';
+	static const char* i64Prefix = "ll";
+	static const char* wcharPrefix = "l";
+	static const char wcharType = 's';
 #endif
 
 class StackBuffer
