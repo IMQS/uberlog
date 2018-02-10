@@ -5,7 +5,7 @@ uberlog is a cross platform C++ logging system that is:
 1. Small
 2. Fast
 3. Robust
-4. Runs on Linux and Windows
+4. Runs on Linux, Windows, OSX
 5. MIT License
 
 ## Small
@@ -16,6 +16,10 @@ Logs are written to a shared memory ring buffer. Your program only stalls if the
 queue is full, which only happens when the writer cannot keep up with the
 amount of log messages. Under such circumstances, you generally have worse
 problems (ie unsustainable system load).
+
+By using a multi-process architecture, the number of syscalls issued by uberlog
+is extremely low. This is of particular relevance on a CPU/OS with Meltdown mitigations,
+particularly Kernel Page Table Isolation.
 
 ## Robust
 A child process is spawned, which takes care of writing the log messages to a file.
@@ -102,5 +106,13 @@ format, to the caching of the date string, to the output into the ring buffer.
 That is how we're able to achieve a 10x speedup over a naive system.
 
 When you look at the number above, it becomes quite clear that unless you're
-outputting manys thousands of log messages per second, a naive solution is
+outputting many thousands of log messages per second, a naive solution is
 just fine. But if you want the best, you've come to the right place!
+
+[2018 UPDATE]
+
+Now that the Meltdown/Spectre bugs have surfaced, the uberlog architecture
+is more relevant, in terms of performance. I haven't yet taken the time to
+measure this, but it's clear from the research out there that it is good to
+avoid syscalls where possible (especially due to KPTI), and uberlog really
+shines in that respect.
