@@ -304,8 +304,9 @@ public:
 		// Try to open file immediately, for consistency & predictability sake
 		Log.Open();
 
-		uint32_t sleepMS      = 0;
-		uint64_t totalSleepMS = 0;
+		uint32_t sleepMS                = 0;
+		uint64_t totalSleepMS           = 0;
+		bool     isLinuxInsideContainer = IsInsideLinuxContainer();
 
 		while (!IsParentDead && !HasReceivedCloseMessage())
 		{
@@ -326,7 +327,12 @@ public:
 			else
 				sleepMS = WaitForOpenSleepMS;
 
-			PollForParentProcessDeath(); // Not used on Windows
+			if (!isLinuxInsideContainer)
+			{
+				// See PollForParentProcessDeath() comments, for why we don't do this under docker/lxc
+				// This is a no-op on Windows, because on Windows we have a different mechanism.
+				PollForParentProcessDeath();
+			}
 			totalSleepMS += sleepMS;
 			internal::SleepMS(sleepMS);
 		}
@@ -384,6 +390,31 @@ private:
 #endif
 	}
 
+	bool IsInsideLinuxContainer()
+	{
+#ifdef __linux__
+		int fd = open("/proc/1/cgroup", O_RDONLY);
+		if (fd == -1)
+		{
+			OutOfBandWarning("Unable to read /proc/1/cgroup to determine if I am running inside a container");
+			return false;
+		}
+		char buf[512];
+		auto n      = read(fd, buf, sizeof(buf) - 1);
+		n           = n < sizeof(buf) ? n : sizeof(buf) - 1;
+		buf[n]      = 0;
+		bool inside = strstr(buf, "/docker/") != nullptr || strstr(buf, "/lxc/") != nullptr;
+		close(fd);
+		return inside;
+#else
+		return false;
+#endif
+	}
+
+	// NOTE: This doesn't work when running under docker. I don't know why, but ppid
+	// comes back as 0 or 1 (I haven't checked which exactly). This is usually not
+	// a problem under docker though, because when your parent process dies, docker will
+	// reap it's children.
 	void PollForParentProcessDeath()
 	{
 #ifdef __linux__
