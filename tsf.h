@@ -106,17 +106,20 @@ public:
 	fmtarg(__int64 v)						: Type(TI64), I64(v) {}
 	fmtarg(unsigned __int64 v)				: Type(TU64), UI64(v) {}
 #else
+	// clang/gcc
 	fmtarg(int v)							: Type(TI32), I32(v) {}
 	fmtarg(unsigned int v)					: Type(TU32), UI32(v) {}
 #if LONG_MAX == 0x7fffffff
+	// 32-bit arch
 	fmtarg(long v)							: Type(TI32), I32(v) {}
 	fmtarg(unsigned long v)					: Type(TU32), UI32(v) {}
-	fmtarg(int64_t v)						: Type(TI64), I64(v) {}
-	fmtarg(uint64_t v)						: Type(TU64), UI64(v) {}
 #else
+	// 64-bit arch
 	fmtarg(long v)							: Type(TI64), I64(v) {}
 	fmtarg(unsigned long v)					: Type(TU64), UI64(v) {}
 #endif
+	fmtarg(long long v)						: Type(TI64), I64(v) {}
+	fmtarg(unsigned long long v)			: Type(TU64), UI64(v) {}
 #endif
 	fmtarg(double v)						: Type(TDbl), Dbl(v) {}
 };
@@ -204,6 +207,8 @@ template<typename... Args>
 size_t print(FILE* file, const char* fs, const Args&... args)
 {
 	auto res = fmt(fs, args...);
+	if (res.size() == 0)
+		return 0;
 	return fwrite(res.c_str(), 1, res.length(), file);
 }
 
