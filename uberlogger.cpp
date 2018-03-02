@@ -454,7 +454,7 @@ private:
 				if (head.PayloadLen > WriteBufSize - bufpos)
 				{
 					if (!Log.Write(WriteBuf, bufpos))
-						OutOfBandWarning("Failed to write to log file");
+						OutOfBandWarning("Failed to write to log file '%s'\n", Filename.c_str());
 					bufpos = 0;
 				}
 
@@ -480,7 +480,7 @@ private:
 					if (ok && size2 != 0)
 						ok = Log.Write(ptr2, size2);
 					if (!ok)
-						OutOfBandWarning("Failed to write to log file");
+						OutOfBandWarning("Failed to write to log file '%s'\n", Filename.c_str());
 					Ring.Read(nullptr, head.PayloadLen);
 				}
 				break;
@@ -494,7 +494,7 @@ private:
 		if (bufpos != 0)
 		{
 			if (!Log.Write(WriteBuf, bufpos))
-				OutOfBandWarning("Failed to write to log file");
+				OutOfBandWarning("Failed to write to log file '%s'\n", Filename.c_str());
 		}
 
 		return nmessages;
