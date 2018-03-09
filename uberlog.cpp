@@ -358,6 +358,16 @@ std::string FullPath(const char* relpath)
 	return copy;
 }
 
+bool IsPathAbsolute(const char* path)
+{
+	char c0 = path[0];
+#ifdef _WIN32
+	return ((c0 >= 'A' && c0 <= 'Z') || (c0 >= 'a' && co <= 'z')) && path[1] == ':';
+#else
+	return c0 == '/';
+#endif
+}
+
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -740,8 +750,9 @@ UBERLOG_API Level ParseLevel(const char* level)
 
 Logger::Logger()
 {
-	Level     = uberlog::Level::Info;
-	TeeStdOut = false;
+	LoggerPath = "uberlogger";
+	Level      = uberlog::Level::Info;
+	TeeStdOut  = false;
 }
 
 Logger::~Logger()
@@ -786,6 +797,11 @@ void Logger::Close()
 
 	CloseRingBuffer();
 	IsOpen = false;
+}
+
+void Logger::SetLoggerProgramPath(const char* uberloggerFilename)
+{
+	LoggerPath = uberloggerFilename;
 }
 
 void Logger::SetRingBufferSize(size_t ringBufferSize)
@@ -878,11 +894,17 @@ bool Logger::Open()
 
 	StdOutFD = fileno(stdout);
 
-	std::string uberLoggerPath = "uberlogger";
-	auto        myPath         = GetMyExePath();
-	auto        lastSlash      = myPath.rfind(PATH_SLASH);
-	if (lastSlash != std::string::npos)
-		uberLoggerPath = myPath.substr(0, lastSlash + 1) + "uberlogger";
+	std::string uberLoggerPath = LoggerPath;
+	if (uberLoggerPath.size() == 0)
+		uberLoggerPath = "uberlogger";
+
+	if (!IsPathAbsolute(uberLoggerPath.c_str()))
+	{
+		auto myPath    = GetMyExePath();
+		auto lastSlash = myPath.rfind(PATH_SLASH);
+		if (lastSlash != std::string::npos)
+			uberLoggerPath = myPath.substr(0, lastSlash + 1) + uberLoggerPath;
+	}
 
 	const int   nArgs = 6;
 	std::string args[nArgs];

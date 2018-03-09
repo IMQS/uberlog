@@ -56,6 +56,7 @@ size_t                SharedMemSizeFromRingSize(size_t ringBufferSize);
 void                  OutOfBandWarning(_In_z_ _Printf_format_string_ const char* msg, ...);
 UBERLOG_NORETURN void Panic(const char* msg);
 std::string           FullPath(const char* relpath);
+bool                  IsPathAbsolute(const char* path);
 uint64_t              siphash24(const void* src, size_t src_sz, const char key[16]);
 
 /* Memory mapped ring buffer.
@@ -187,6 +188,10 @@ public:
 	void OpenStdOut(); // Open, but do not write to a log file. Just write to stdout. This is typically used when running unit tests.
 	void Close();
 
+	// Override the filename of the 'uberlogger' program. Can be absolute path, or a path relative to the directory of the currently executing process
+	// The default value is "uberlogger"
+	void SetLoggerProgramPath(const char* uberloggerFilename);
+
 	std::string GetFilename() const { return Filename; }
 
 	// Set the ring buffer size, which is used to communicate between
@@ -259,6 +264,7 @@ public:
 
 private:
 	std::string                 Filename;
+	std::string                 LoggerPath;
 	size_t                      RingBufferSize            = 1 * 1024 * 1024;
 	int64_t                     MaxFileSize               = 30 * 1048576;
 	int32_t                     MaxNumArchives            = 3;
