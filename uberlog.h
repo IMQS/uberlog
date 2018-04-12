@@ -192,7 +192,8 @@ public:
 	// The default value is "uberlogger"
 	void SetLoggerProgramPath(const char* uberloggerFilename);
 
-	std::string GetFilename() const { return Filename; }
+	std::string    GetFilename() const { return Filename; }
+	uberlog::Level GetLevel() const { return Level; }
 
 	// Set the ring buffer size, which is used to communicate between
 	// the main process and the log writer process. This must be called
