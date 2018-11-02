@@ -772,6 +772,7 @@ void Logger::OpenStdOut()
 	std::lock_guard<std::mutex> guard(Lock);
 	IsStdOutMode = true;
 	IsOpen       = true;
+	StdOutFD     = fileno(stdout);
 }
 
 void Logger::Close()
