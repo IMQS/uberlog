@@ -181,6 +181,12 @@ public:
 	// Default = false.
 	std::atomic<bool> TeeStdOut;
 
+	// If true, then include the date as the first part of the log message.
+	// It is useful to disable this if you're writing logs to a system that
+	// already adds dates to every log line.
+	// Default = true.
+	std::atomic<bool> IncludeDate;
+
 	Logger();
 	~Logger();
 
@@ -221,16 +227,25 @@ public:
 		if (level < Level)
 			return;
 
+		const bool   includeDate  = IncludeDate;
+		const size_t fixedPortion = includeDate ? 42 : 13;
+
+		// IncludeDate = true
 		// [------------- 42 characters ------------]
 		// [------ 28 characters -----]
 		// 2015-07-15T14:53:51.979+0200 [I] 00001fdc The log message here
+
+		// IncludeDate = false
+		// [  13 chars ]
+		// [I] 00001fdc The log message here
+
 		const size_t statbufsize = 200;
 		char         statbuf[statbufsize];
 
-		uberlog_tsf::StrLenPair msg = uberlog_tsf::fmt_buf(statbuf + 42, statbufsize - 42 - EolLen, format_str, args...);
+		uberlog_tsf::StrLenPair msg = uberlog_tsf::fmt_buf(statbuf + fixedPortion, statbufsize - fixedPortion - EolLen, format_str, args...);
 
 		// Split this into two phases, to reduce the amount of code in the header
-		LogDefaultFormat_Phase2(level, msg, msg.Str == statbuf + 42);
+		LogDefaultFormat_Phase2(level, includeDate, msg, msg.Str == statbuf + fixedPortion);
 	}
 
 	template <typename... Args>
@@ -291,6 +306,6 @@ private:
 	bool CreateRingBuffer();
 	void CloseRingBuffer();
 	bool WaitForRingToBeEmpty(uint32_t milliseconds); // Returns true if the ring is empty
-	void LogDefaultFormat_Phase2(uberlog::Level level, uberlog_tsf::StrLenPair msg, bool buf_is_static);
+	void LogDefaultFormat_Phase2(uberlog::Level level, bool includeDate, uberlog_tsf::StrLenPair msg, bool buf_is_static);
 };
 } // namespace uberlog

@@ -247,7 +247,25 @@ void TestStdOut()
 {
 	uberlog::Logger l;
 	l.OpenStdOut();
-	l.Info("straight to stdout");
+	l.Info("straight outta stdout");
+}
+
+void TestNoDate()
+{
+	uberlog::Logger l;
+	l.OpenStdOut();
+	l.IncludeDate = false;
+	l.Info("no date");
+	l.Info("on the previous");
+	l.Info("lines");
+	l.Info(
+	    "[["
+	    "<<1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef>>"
+	    "<<1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef>>"
+	    "<<1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef>>"
+	    "]]");
+	l.IncludeDate = true;
+	l.Info("but now there is a date");
 }
 
 struct Stats
@@ -404,6 +422,7 @@ void TestAll()
 	TestFormattedWrite();
 	TestRingBuffer();
 	TestStdOut();
+	TestNoDate();
 }
 
 #ifdef _WIN32

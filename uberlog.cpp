@@ -750,9 +750,10 @@ UBERLOG_API Level ParseLevel(const char* level)
 
 Logger::Logger()
 {
-	LoggerPath = "uberlogger";
-	Level      = uberlog::Level::Info;
-	TeeStdOut  = false;
+	LoggerPath  = "uberlogger";
+	Level       = uberlog::Level::Info;
+	TeeStdOut   = false;
+	IncludeDate = true;
 }
 
 Logger::~Logger()
@@ -1003,31 +1004,38 @@ bool Logger::WaitForRingToBeEmpty(uint32_t milliseconds)
 #pragma warning(disable : 6386) // /analyze thinks we might overrun 'buf'
 #endif
 
-void Logger::LogDefaultFormat_Phase2(uberlog::Level level, uberlog_tsf::StrLenPair msg, bool buf_is_static)
+void Logger::LogDefaultFormat_Phase2(uberlog::Level level, bool includeDate, uberlog_tsf::StrLenPair msg, bool buf_is_static)
 {
+	// IncludeDate = true
 	// [------------- 42 characters ------------]
 	// [------ 28 characters -----]
 	// 2015-07-15T14:53:51.979+0200 [I] 00001fdc The log message here
 
+	// IncludeDate = false
+	// [  13 chars ]
+	// [I] 00001fdc The log message here
+
+	const size_t fixedPortion = includeDate ? 42 : 13;
+
 	char*  buf;
-	size_t bufsize = 42 + msg.Len + EolLen + 1;
+	size_t bufsize = fixedPortion + msg.Len + EolLen + 1;
 	if (buf_is_static)
 	{
-		buf = msg.Str - 42;
+		buf = msg.Str - fixedPortion;
 	}
 	else
 	{
 		buf = new char[bufsize];
-		memcpy(buf + 42, msg.Str, msg.Len);
+		memcpy(buf + fixedPortion, msg.Str, msg.Len);
 		delete[] msg.Str;
 	}
 
 	// Write the first part of the log message into buf. This is the time, the log level, and the thread id
 	if (_Test_OverridePrefix[0] != 0)
 	{
-		memcpy(buf, _Test_OverridePrefix, 42);
+		memcpy(buf, _Test_OverridePrefix, fixedPortion);
 	}
-	else
+	else if (includeDate)
 	{
 		TK.Format(buf);
 		buf[28] = ' ';
@@ -1036,18 +1044,29 @@ void Logger::LogDefaultFormat_Phase2(uberlog::Level level, uberlog_tsf::StrLenPa
 		buf[31] = ']';
 		buf[32] = ' ';
 		TimeKeeper::FormatUintHex(8, buf + 33, (unsigned int) uberlog::internal::GetMyTID());
-	}
-	buf[41] = ' ';
-	if (uberlog::internal::UseCRLF)
-	{
-		buf[42 + msg.Len] = '\r';
-		buf[43 + msg.Len] = '\n';
-		buf[44 + msg.Len] = 0;
+		buf[41] = ' ';
 	}
 	else
 	{
-		buf[42 + msg.Len] = '\n';
-		buf[43 + msg.Len] = 0;
+		buf[0] = '[';
+		buf[1] = LevelChar(level);
+		buf[2] = ']';
+		buf[3] = ' ';
+		TimeKeeper::FormatUintHex(8, buf + 4, (unsigned int) uberlog::internal::GetMyTID());
+		buf[12] = ' ';
+	}
+
+	size_t totalLen = fixedPortion + msg.Len;
+	if (uberlog::internal::UseCRLF)
+	{
+		buf[totalLen]     = '\r';
+		buf[totalLen + 1] = '\n';
+		buf[totalLen + 2] = 0;
+	}
+	else
+	{
+		buf[totalLen]     = '\n';
+		buf[totalLen + 1] = 0;
 	}
 
 	LogRaw(buf, bufsize - 1);

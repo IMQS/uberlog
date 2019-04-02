@@ -4,6 +4,7 @@ Debug/
 Release/
 msvc/test/expected
 msvc/test/test.log
+.vscode/ipch
 *.VC.db
 *.user
 *.opendb

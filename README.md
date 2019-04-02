@@ -61,6 +61,9 @@ top of uberlog::Logger - either by deriving a class from it, or
 encapsulating it inside your own class. You can then use the LogRaw
 function of Logger to emit messages in whatever format you choose.
 
+Note that you can disable the output of the time in the log message, by
+setting `IncludeDate = false`.
+
 ## Benchmarks
 
 These benchmarks are on an i7-6700K
