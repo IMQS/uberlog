@@ -28,8 +28,6 @@ into the log file.
 #endif
 
 #ifdef __APPLE__
-#include <libproc.h>
-#include <sys/proc_info.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/fcntl.h>
