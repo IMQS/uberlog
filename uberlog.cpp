@@ -763,6 +763,11 @@ Logger::~Logger()
 
 void Logger::Open(const char* filename)
 {
+	if (filename == nullptr || filename[0] == 0)
+	{
+		OutOfBandWarning("Logger.Open called with empty filename\n");
+		return;
+	}
 	std::lock_guard<std::mutex> guard(Lock);
 	Filename = FullPath(filename);
 	Open();
