@@ -28,6 +28,8 @@ into the log file.
 #endif
 
 #ifdef __APPLE__
+#include <libproc.h>
+#include <sys/proc_info.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/fcntl.h>
@@ -387,7 +389,7 @@ private:
 
 	void PollForParentProcessDeath()
 	{
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
 		// On linux, if our parent process dies, then we will get a new parent pid (ppid). We take any change in ppid
 		// as a sign that our parent process has died. When not running under docker, you can use ppid = 0 or ppid = 1
 		// as a sign that your parent process has died, but this is not reliable under docker. So we only check for
