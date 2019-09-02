@@ -28,6 +28,8 @@ into the log file.
 #endif
 
 #ifdef __APPLE__
+#include <libproc.h>
+#include <sys/proc_info.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/fcntl.h>
@@ -398,6 +400,18 @@ private:
 		{
 			IsParentDead = true;
 		}
+#elif __APPLE__
+        int numberOfProcesses = proc_listpids(PROC_ALL_PIDS, 0, NULL, 0);
+        pid_t pids[numberOfProcesses];
+        bzero(pids, sizeof(pids));
+        proc_listpids(PROC_ALL_PIDS, 0, pids, sizeof(pids));
+        for (int i = 0; i < numberOfProcesses; ++i)
+        {
+            if (pids[i] == ParentPID)
+            {
+                IsParentDead = true;
+            }
+        }
 #endif
 		// On Windows, we don't need to implement this path, because we can wait on process death
 	}
