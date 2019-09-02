@@ -389,7 +389,7 @@ private:
 
 	void PollForParentProcessDeath()
 	{
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
 		// On linux, if our parent process dies, then we will get a new parent pid (ppid). We take any change in ppid
 		// as a sign that our parent process has died. When not running under docker, you can use ppid = 0 or ppid = 1
 		// as a sign that your parent process has died, but this is not reliable under docker. So we only check for
@@ -400,18 +400,6 @@ private:
 		{
 			IsParentDead = true;
 		}
-#elif __APPLE__
-        int numberOfProcesses = proc_listpids(PROC_ALL_PIDS, 0, NULL, 0);
-        pid_t pids[numberOfProcesses];
-        bzero(pids, sizeof(pids));
-        proc_listpids(PROC_ALL_PIDS, 0, pids, sizeof(pids));
-        for (int i = 0; i < numberOfProcesses; ++i)
-        {
-            if (pids[i] == ParentPID)
-            {
-                IsParentDead = true;
-            }
-        }
 #endif
 		// On Windows, we don't need to implement this path, because we can wait on process death
 	}
