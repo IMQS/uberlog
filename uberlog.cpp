@@ -546,7 +546,7 @@ size_t RingBuffer::Read(void* data, size_t max_len)
 // Fetch one or two pointers into the ring buffer, which hold the location of the readable data.
 // Does not increment the read pointer. You must call Read(null, len) once you've copied the
 // data out of the ring buffer.
-void RingBuffer::ReadNoCopy(size_t len, void*& ptr1, size_t& ptr1_size, void*& ptr2, size_t& ptr2_size)
+void RingBuffer::ReadNoCopy(size_t len, void*& ptr1, size_t& ptr1_size, void*& ptr2, size_t& ptr2_size) const
 {
 	if (len > AvailableForRead())
 		Panic("ReadPointers attempted to read more than available bytes");
@@ -567,24 +567,24 @@ void RingBuffer::ReadNoCopy(size_t len, void*& ptr1, size_t& ptr1_size, void*& p
 	}
 }
 
-std::atomic<size_t>* RingBuffer::ReadPtr()
+std::atomic<size_t>* RingBuffer::ReadPtr() const
 {
 	return (std::atomic<size_t>*) (Buf + Size);
 }
 
-std::atomic<size_t>* RingBuffer::WritePtr()
+std::atomic<size_t>* RingBuffer::WritePtr() const
 {
 	return (std::atomic<size_t>*) (Buf + Size + sizeof(size_t));
 }
 
-size_t RingBuffer::AvailableForRead()
+size_t RingBuffer::AvailableForRead() const
 {
 	size_t readp  = ReadPtr()->load();
 	size_t writep = WritePtr()->load();
 	return (writep - readp) & (Size - 1);
 }
 
-size_t RingBuffer::AvailableForWrite()
+size_t RingBuffer::AvailableForWrite() const
 {
 	return Size - 1 - AvailableForRead();
 }
@@ -617,7 +617,7 @@ TimeKeeper::TimeKeeper()
 	NewDay();
 }
 
-void TimeKeeper::Format(char* buf)
+void TimeKeeper::Format(char* buf) const
 {
 	uint64_t seconds;
 	uint32_t nano;
@@ -655,9 +655,10 @@ void TimeKeeper::Format(char* buf)
 	memcpy(buf + 23, TimeZoneStr, 5);
 }
 
-void TimeKeeper::NewDay()
+void TimeKeeper::NewDay() const
 {
-	std::lock_guard<std::mutex> guard(Lock);
+	TimeKeeper&                 mutableThis = const_cast<TimeKeeper&>(*this);
+	std::lock_guard<std::mutex> guard(mutableThis.Lock);
 	uint64_t                    seconds;
 	uint32_t                    nano;
 	UnixTimeNow(seconds, nano);
@@ -671,8 +672,8 @@ void TimeKeeper::NewDay()
 	tp.tv_nsec         = nano;
 	gmtime_r(&tp.tv_sec, &t2);
 #endif
-	LocalDayStartSeconds.store(seconds - (t2.tm_hour * 3600 + t2.tm_min * 60 + t2.tm_sec));
-	strftime(DateStr, 11, "%Y-%m-%d", &t2);
+	mutableThis.LocalDayStartSeconds.store(seconds - (t2.tm_hour * 3600 + t2.tm_min * 60 + t2.tm_sec));
+	strftime(mutableThis.DateStr, 11, "%Y-%m-%d", &t2);
 }
 
 void TimeKeeper::UnixTimeNow(uint64_t& seconds, uint32_t& nano) const
@@ -845,9 +846,10 @@ void Logger::SetLevel(const char* level)
 	SetLevel(ParseLevel(level));
 }
 
-void Logger::LogRaw(const void* data, size_t len)
+void Logger::LogRaw(const void* data, size_t len) const
 {
-	std::lock_guard<std::mutex> guard(Lock);
+	Logger&                     mutableThis = const_cast<Logger&>(*this);
+	std::lock_guard<std::mutex> guard(mutableThis.Lock);
 	if (!IsOpen)
 	{
 		OutOfBandWarning("Logger.LogRaw called but log is not open\n");
@@ -870,9 +872,11 @@ void Logger::LogRaw(const void* data, size_t len)
 		len = maxLen;
 	}
 
-	NumLogMessagesSent++;
-	SendMessage(Command::LogMsg, data, len);
-	if (NumLogMessagesSent == 1)
+	bool wasFalse     = false;
+	bool firstMessage = mutableThis.IsFirstLogMessage.compare_exchange_strong(wasFalse, true);
+
+	mutableThis.SendMessage(Command::LogMsg, data, len);
+	if (firstMessage)
 	{
 		// At process startup, it is likely that we are sending messages, and our
 		// child writer process has not yet opened a handle to the shared memory.
@@ -932,8 +936,8 @@ bool Logger::Open()
 		return false;
 	}
 
-	IsOpen             = true;
-	NumLogMessagesSent = 0;
+	IsOpen            = true;
+	IsFirstLogMessage = true;
 	return true;
 }
 
@@ -989,7 +993,7 @@ void Logger::CloseRingBuffer()
 	ShmHandle = internal::NullShmHandle;
 }
 
-bool Logger::WaitForRingToBeEmpty(uint32_t milliseconds)
+bool Logger::WaitForRingToBeEmpty(uint32_t milliseconds) const
 {
 	auto start = std::chrono::system_clock::now();
 	while (Ring.AvailableForRead() != 0)
@@ -1009,7 +1013,7 @@ bool Logger::WaitForRingToBeEmpty(uint32_t milliseconds)
 #pragma warning(disable : 6386) // /analyze thinks we might overrun 'buf'
 #endif
 
-void Logger::LogDefaultFormat_Phase2(uberlog::Level level, bool includeDate, uberlog_tsf::StrLenPair msg, bool buf_is_static)
+void Logger::LogDefaultFormat_Phase2(uberlog::Level level, bool includeDate, uberlog_tsf::StrLenPair msg, bool buf_is_static) const
 {
 	// IncludeDate = true
 	// [------------- 42 characters ------------]

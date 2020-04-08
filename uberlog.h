@@ -83,13 +83,13 @@ public:
 	void   Write(const void* data, size_t len);
 	void   WriteNoCommit(size_t offset, const void* data, size_t len);
 	size_t Read(void* data, size_t max_len);
-	void   ReadNoCopy(size_t len, void*& ptr1, size_t& ptr1_size, void*& ptr2, size_t& ptr2_size);
+	void   ReadNoCopy(size_t len, void*& ptr1, size_t& ptr1_size, void*& ptr2, size_t& ptr2_size) const;
 
-	std::atomic<size_t>* ReadPtr();
-	std::atomic<size_t>* WritePtr();
+	std::atomic<size_t>* ReadPtr() const;
+	std::atomic<size_t>* WritePtr() const;
 
-	size_t AvailableForRead();
-	size_t AvailableForWrite();
+	size_t AvailableForRead() const;
+	size_t AvailableForWrite() const;
 	size_t MaxAvailableForWrite() const { return Size - 1; } // The amount of data you can transmit atomically, when the buffer is empty
 };
 
@@ -101,7 +101,7 @@ class TimeKeeper
 public:
 	TimeKeeper();
 
-	void        Format(char* buf);
+	void        Format(char* buf) const;
 	static void FormatUintDecimal(uint32_t ndigit, char* buf, uint32_t v);
 	static void FormatUintHex(uint32_t ndigit, char* buf, uint32_t v);
 
@@ -117,7 +117,7 @@ private:
 	void(WINAPI* __GetSystemTimePreciseAsFileTime)(_Out_ LPFILETIME lpSystemTimeAsFileTime) = nullptr;
 #endif
 
-	void NewDay();
+	void NewDay() const;
 	void UnixTimeNow(uint64_t& seconds, uint32_t& nano) const;
 };
 
@@ -170,6 +170,13 @@ and setup a memory mapped buffer which is used to communicate with the child pro
 If you want to customize the format of the log messages, then you must wrap this class
 inside your own logger, and redirect calls down to LogRaw or LogFmt. Creating a new
 class that inherits from this is also a reasonable approach.
+
+The logging functions are 'const' so that it's possible to emit log messages when
+the Logger object is a member of a larger object that is 'const'. Of course the
+const-ness of the log functions are a lie, in the sense that they produce side-effects.
+However, uberlog takes great pains to be as unintrusive as possible to your
+application, so hopefully the only observable side-effect is the production of
+logs.
 */
 class UBERLOG_API Logger
 {
@@ -218,11 +225,11 @@ public:
 	void SetLevel(const char* level);
 
 	// Low level "write bytes to log file"
-	void LogRaw(const void* data, size_t len);
+	void LogRaw(const void* data, size_t len) const;
 
 	// Write a log message in the default uberlog format, which is "Date [Level] ThreadID Message"
 	template <typename... Args>
-	void Log(Level level, const char* format_str, const Args&... args)
+	void Log(Level level, const char* format_str, const Args&... args) const
 	{
 		if (level < Level)
 			return;
@@ -249,31 +256,31 @@ public:
 	}
 
 	template <typename... Args>
-	void Debug(const char* format_str, const Args&... args)
+	void Debug(const char* format_str, const Args&... args) const
 	{
 		Log(uberlog::Level::Debug, format_str, args...);
 	}
 
 	template <typename... Args>
-	void Info(const char* format_str, const Args&... args)
+	void Info(const char* format_str, const Args&... args) const
 	{
 		Log(uberlog::Level::Info, format_str, args...);
 	}
 
 	template <typename... Args>
-	void Warn(const char* format_str, const Args&... args)
+	void Warn(const char* format_str, const Args&... args) const
 	{
 		Log(uberlog::Level::Warn, format_str, args...);
 	}
 
 	template <typename... Args>
-	void Error(const char* format_str, const Args&... args)
+	void Error(const char* format_str, const Args&... args) const
 	{
 		Log(uberlog::Level::Error, format_str, args...);
 	}
 
 	template <typename... Args>
-	void Fatal(const char* format_str, const Args&... args)
+	void Fatal(const char* format_str, const Args&... args) const
 	{
 		Log(uberlog::Level::Fatal, format_str, args...);
 	}
@@ -284,12 +291,12 @@ private:
 	size_t                      RingBufferSize            = 1 * 1024 * 1024;
 	int64_t                     MaxFileSize               = 30 * 1048576;
 	int32_t                     MaxNumArchives            = 3;
-	int64_t                     NumLogMessagesSent        = 0;
 	uint32_t                    TimeoutChildProcessInitMS = 10000; // Time we wait for our child process to come alive
 	const int                   EolLen                    = uberlog::internal::UseCRLF ? 2 : 1;
 	bool                        IsOpen                    = false;
 	bool                        IsStdOutMode              = false;
 	int                         StdOutFD                  = -1;
+	std::atomic<bool>           IsFirstLogMessage;
 	std::atomic<uberlog::Level> Level;
 	std::mutex                  Lock; // Guards access to all public functions
 	internal::TimeKeeper        TK;
@@ -305,7 +312,7 @@ private:
 	void SendMessage(internal::Command cmd, const void* payload, size_t payload_len);
 	bool CreateRingBuffer();
 	void CloseRingBuffer();
-	bool WaitForRingToBeEmpty(uint32_t milliseconds); // Returns true if the ring is empty
-	void LogDefaultFormat_Phase2(uberlog::Level level, bool includeDate, uberlog_tsf::StrLenPair msg, bool buf_is_static);
+	bool WaitForRingToBeEmpty(uint32_t milliseconds) const; // Returns true if the ring is empty
+	void LogDefaultFormat_Phase2(uberlog::Level level, bool includeDate, uberlog_tsf::StrLenPair msg, bool buf_is_static) const;
 };
 } // namespace uberlog
